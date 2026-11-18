@@ -172,7 +172,8 @@ export class WorldMap extends EventTarget {
       paint: { 'text-color': T.text, 'text-opacity': 0.6, 'text-halo-color': T.halo, 'text-halo-width': 1 } });
     add({ id: 'country-labels', type: 'symbol', source: 'country-labels', filter: ['>=', ['zoom'], ['get', 'mz']], maxzoom: 7.5, layout: {
       'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-transform': 'uppercase',
-      'text-size': ['interpolate', ['linear'], ['zoom'], 1, ['case', ['>', ['get', 'area'], 3e6], 11, 9], 6, ['case', ['>', ['get', 'area'], 3e6], 20, 16]],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 1, ['case', ['>', ['get', 'area'], 3e6], 11, 9],
+        6, ['case', ['>', ['get', 'area'], 3e6], 20, ['>', ['get', 'area'], 1e5], 16, ['>', ['get', 'area'], 1e4], 12, 9.5]],
       'text-letter-spacing': 0.14, 'text-max-width': 7, 'symbol-sort-key': ['-', 0, ['get', 'area']], 'text-padding': 4 },
       paint: { 'text-color': T.text, 'text-halo-color': T.halo, 'text-halo-width': 1.6 } });
     add({ id: 'landmark-glow', type: 'circle', source: 'landmarks', filter: ['in', ['get', 'id'], ['literal', []]], minzoom: 1.2, paint: {

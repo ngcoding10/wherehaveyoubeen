@@ -11,16 +11,22 @@ landmarks along the way.
 - **Countries, states and cities each get their own colour.** Defaults: countries teal,
   states amber, cities raspberry pins, wonders gold. You can change all of them
   (🎨 button). Places you haven't been stay grey.
+- **Real map detail when you zoom in.** Coastlines, islands, lakes, rivers, roads,
+  parks, buildings and neighbourhood names come from OpenStreetMap, through the free
+  OpenFreeMap tiles. Zoom into New York and you'll see Manhattan, the piers and the
+  street grid.
 - **State and province borders appear as you zoom in.** There are 4,596 of them,
-  covering every country.
+  covering every country. Full-resolution borders load for each country as you get
+  close.
 - **226,382 cities, towns and villages.** This is every populated place with 500+
   people in GeoNames. They load one country at a time as you zoom in. Bigger cities
   appear first, smaller towns show up as you get closer.
-- **469 pixel-art landmarks.** These cover the New 7 Wonders, the Ancient Wonders,
-  natural wonders, great forests and rainforests, icons like the Burj Khalifa and the
-  Statue of Liberty, sacred sites and ruins. There are 56 hand-made 16×16 sprites plus
-  colour variants. Collect them in the **Wonders** tab, which works like a pokédex:
-  uncollected ones show as silhouettes.
+- **469 pixel-art landmarks, each with its own unique 16×16 sprite.** These cover the New 7
+  Wonders, the Ancient Wonders, natural wonders, great forests and rainforests, icons like
+  the Burj Khalifa and the Statue of Liberty, sacred sites and ruins. No two sprites are the
+  same. Look-alike nature spots get a signature animal, plant or building (a panda, a bison,
+  the Lake Bled island church…). Collect them in the **Wonders** tab, which works like a
+  pokédex: uncollected ones show as silhouettes.
 - **Tabs:**
   - **Explore**: details for the selected place. Includes a checklist of its regions and
     cities, a searchable list of all its towns, nearby wonders, and a visit date and
@@ -82,7 +88,8 @@ change winning, and deletions sync too.
 
 | What | Source | License |
 |---|---|---|
-| Country & state/province borders | [Natural Earth](https://www.naturalearthdata.com/) 1:10m (simplified) | Public domain |
+| Street-level basemap (coastlines, water, roads, buildings, place names) | [OpenStreetMap](https://www.openstreetmap.org/copyright) via [OpenFreeMap](https://openfreemap.org/) / OpenMapTiles | ODbL |
+| Country & state/province borders | [Natural Earth](https://www.naturalearthdata.com/) 1:10m | Public domain |
 | Cities, towns, villages | [GeoNames](https://www.geonames.org/) `cities500` | CC BY 4.0 |
 | Map engine | [MapLibre GL JS](https://maplibre.org/) 5.23 (vendored) | BSD-3 |
 | Map label fonts | Noto Sans via [protomaps basemaps-assets](https://github.com/protomaps/basemaps-assets) | SIL OFL |
@@ -94,8 +101,10 @@ To rebuild the data, for example to pick up a newer GeoNames dump, see
 
 ### Known limits
 
-- Borders are simplified so the whole world loads quickly. Coastlines are approximate
-  when you're zoomed in very close.
+- Coastlines, roads and borders lines at close zoom come from OpenStreetMap and are
+  exact. The *coloured fills* for visited countries and states use Natural Earth
+  shapes. Along land borders they can sit a little off the exact OSM border line when
+  you're zoomed in to street level.
 - Cities come from GeoNames' list of places with 500+ people. Tiny hamlets aren't
   included. Population figures come from GeoNames and some are out of date.
 - The "195 countries" count is the 193 UN members plus Vatican City and Palestine. You

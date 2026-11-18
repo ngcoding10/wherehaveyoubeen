@@ -37,6 +37,11 @@ landmarks along the way.
     traveller rank.
 - **📍 Locate me / check in.** Finds the nearest town to you, logs it in one tap and
   can save it as your 🏠 home base.
+- **Quick add:** type a whole list like `London, Beijing, Miami, Paris, Texas, Japan, Eiffel Tower`
+  and log everything at once. It matches against the app's own 226k places, and anything not
+  in there (a tiny village, "Tuscany") is looked up on OpenStreetMap's free Nominatim
+  service. No API key needed. Pick a different match from the dropdown if a name is
+  ambiguous.
 - **Search** across countries, states, cities and wonders. Press `/` to jump to it.
 - **4 map styles:** Midnight, Atlas (vintage paper), Arcade (neon 8-bit) and Daylight.
 - **Saving:**

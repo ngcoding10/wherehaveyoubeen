@@ -176,10 +176,11 @@ export class WorldMap extends EventTarget {
         6, ['case', ['>', ['get', 'area'], 3e6], 20, ['>', ['get', 'area'], 1e5], 16, ['>', ['get', 'area'], 1e4], 12, 9.5]],
       'text-letter-spacing': 0.14, 'text-max-width': 7, 'symbol-sort-key': ['-', 0, ['get', 'area']], 'text-padding': 4 },
       paint: { 'text-color': T.text, 'text-halo-color': T.halo, 'text-halo-width': 1.6 } });
-    add({ id: 'landmark-glow', type: 'circle', source: 'landmarks', filter: ['in', ['get', 'id'], ['literal', []]], minzoom: 1.2, paint: {
+    add({ id: 'landmark-glow', type: 'circle', source: 'landmarks', filter: ['in', ['get', 'id'], ['literal', []]], minzoom: 3, paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 9, 5, 16, 9, 24], 'circle-color': '#ffd447', 'circle-blur': 0.7, 'circle-opacity': 0.75 } });
-    add({ id: 'landmarks', type: 'symbol', source: 'landmarks', minzoom: 1.2, layout: {
-      'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 1, 0.55, 4, 0.8, 9, 1.25],
+    // wonders appear once you zoom in past the whole-globe view
+    add({ id: 'landmarks', type: 'symbol', source: 'landmarks', minzoom: 3, layout: {
+      'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 5, 0.8, 9, 1.25],
       'icon-anchor': 'bottom', 'icon-padding': 1, 'symbol-sort-key': ['get', 'rank'],
       'text-field': ['step', ['zoom'], '', 5.5, ['get', 'name']], 'text-font': ['Noto Sans Medium'], 'text-size': 11,
       'text-anchor': 'top', 'text-offset': [0, 0.2], 'text-optional': true, 'text-max-width': 9 },
@@ -190,6 +191,7 @@ export class WorldMap extends EventTarget {
       'text-anchor': 'top', 'text-offset': [0, 0.15], 'text-optional': true }, paint: { 'text-color': T.text, 'text-halo-color': T.halo, 'text-halo-width': 1.6 } });
 
     m.moveLayer('country-labels'); // country names win label placement over sprites
+    this.applyLandmarkVisibility();
     this.applyTheme();
     this.refreshVisited();
     this._setCities();
@@ -252,6 +254,10 @@ export class WorldMap extends EventTarget {
     const notVisited = ['!', ['in', ['get', 'id'], ['literal', ids]]];
     m.setFilter('city-dots', ['all', ['>=', ['zoom'], ['get', 'mz']], notVisited]);
     m.setFilter('city-labels', ['all', ['>=', ['zoom'], ['get', 'mz']], notVisited]);
+  }
+  applyLandmarkVisibility() {
+    const v = store.settings.showLandmarks === false ? 'none' : 'visible';
+    for (const l of ['landmarks', 'landmark-glow']) if (this.map.getLayer(l)) this.map.setLayoutProperty(l, 'visibility', v);
   }
   refreshColors() { this._makePins(); this.refreshVisited(); }
 
@@ -325,7 +331,7 @@ export class WorldMap extends EventTarget {
   _wire() {
     const m = this.map;
     let hoverC = '', hoverS = '';
-    const clickable = ['landmarks', 'visited-cities', 'city-dots', 'city-labels'];
+    const clickable = ['landmarks', 'visited-cities', 'city-dots', 'city-labels']; // hidden layers return no hits
     m.on('mousemove', e => {
       const z = m.getZoom();
       const top = m.queryRenderedFeatures(e.point, { layers: clickable });

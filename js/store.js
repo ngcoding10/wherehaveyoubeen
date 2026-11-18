@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'midnight',
   projection: 'globe',
   autoParents: true,
+  showLandmarks: true,
   colors: { country: '#2ec4b6', state: '#ffb703', city: '#ff4d6d', landmark: '#ffd447' },
 };
 
@@ -58,6 +59,16 @@ class Store extends EventTarget {
     }
     this._changed(changed);
     return true;
+  }
+  /** Add many places at once (never removes). entries: [[key, data, parents]] → number newly added */
+  addMany(entries) {
+    const changed = [];
+    for (const [key, data, parents = []] of entries) {
+      if (!this.has(key)) { this.set(key, data, { silent: true }); changed.push(key); }
+      if (this.settings.autoParents) for (const [pk, pdata] of parents) if (pk && !this.has(pk)) { this.set(pk, pdata || {}, { silent: true }); changed.push(pk); }
+    }
+    if (changed.length) this._changed(changed);
+    return changed.length;
   }
   setHome(home) { this.book.home = home ? { ...home, m: Date.now() } : { cleared: true, m: Date.now() }; this._changed(['home']); }
   get home() { return this.book.home && !this.book.home.cleared ? this.book.home : null; }

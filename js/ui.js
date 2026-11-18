@@ -5,6 +5,7 @@ import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
 import { cloud, signIn, signOutUser } from './cloud.js';
+import { parse as parseQuick, resolveLocal, resolveOnline, candLabel } from './quickadd.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -73,6 +74,7 @@ export class UI {
   wireTop() {
     $$('#proj-toggle button').forEach(b => b.onclick = () => { store.setSetting('projection', b.dataset.proj); });
     $('#theme-btn').onclick = () => this.openTheme();
+    $('#quick-btn').onclick = () => this.openQuick();
     $('#account-btn').onclick = () => this.openAccount();
     this.wireSearch();
   }
@@ -97,6 +99,14 @@ export class UI {
     $('#zoom-out').onclick = () => m.zoomOut();
     $('#reset-view').onclick = () => m.flyTo({ center: [10, 25], zoom: worldZoom(store.settings.projection, this.map.container), speed: 1.6 });
     $('#locate').onclick = () => this.locate();
+    const lmBtn = $('#toggle-lm');
+    const syncLm = () => { const on = store.settings.showLandmarks !== false; lmBtn.classList.toggle('off', !on); lmBtn.setAttribute('aria-pressed', on); lmBtn.title = on ? 'Hide wonders' : 'Show wonders'; };
+    syncLm();
+    lmBtn.onclick = () => {
+      store.setSetting('showLandmarks', store.settings.showLandmarks === false);
+      syncLm();
+      this.toast(store.settings.showLandmarks ? '🏛️ Wonders shown (zoom in a little to see them)' : '🏛️ Wonders hidden');
+    };
     $('#go-home').onclick = () => {
       const h = store.home;
       if (!h) return this.toast('No home base yet — tap <b>📍</b> to find yourself, then “Set as home”.');
@@ -141,6 +151,7 @@ export class UI {
     this.applyCSSColors();
     if (path === 'theme') this.map.applyTheme();
     if (path === 'projection') this.map.applyProjection();
+    if (path === 'showLandmarks') this.map.applyLandmarkVisibility();
     if (path.startsWith('colors')) { this.map.refreshColors(); this.renderLegend(); this.renderRibbon(); }
     if (!$('#theme-sheet').hidden) this.renderThemeSheet();
   }
@@ -420,13 +431,14 @@ export class UI {
     body.innerHTML = `
       <div class="p-title"><canvas data-icon="plane" style="width:56px;height:44px"></canvas><h2>${n ? 'Welcome back, traveler' : 'Start your logbook'}</h2></div>
       <p class="blurb">Click any <b>country</b> to stamp it. Zoom in and click a <b>state</b>, then the <b>city</b> dots. Hunt down all ${LANDMARKS.length} pixel <b>wonders</b>.</p>
-      <div class="row-btns"><button class="pix-btn small" id="w-locate">📍 Check in where I am</button><button class="pix-btn small ghost" id="w-search">🔎 Search</button></div>
+      <div class="row-btns"><button class="pix-btn small primary" id="w-quick">＋ Quick add many places</button><button class="pix-btn small" id="w-locate">📍 Check in where I am</button><button class="pix-btn small ghost" id="w-search">🔎 Search</button></div>
       <div class="p-sec"><h3>WONDER OF THE DAY</h3>
         <button class="lm-chip" data-id="${spot.id}" style="width:100%;padding:10px"><canvas data-sprite="${spot.sprite}" style="width:72px;height:72px"></canvas>
         <span><b>${esc(spot.name)}</b><br><span class="muted">${esc(spot.blurb)}</span></span></button></div>
       ${recent.length ? `<div class="p-sec"><h3>RECENTLY LOGGED</h3>${recent.map(([k, v]) => this.recentTag(k, v)).join('')}</div>` : ''}
       <div class="p-sec"><h3>TIPS</h3><p class="muted">• Switch between 🌍 Globe and 🗺️ flat Map at the top.<br>• Change colours & map style with 🎨.<br>• Sign in with Google to save your logbook to the cloud and use it on any device.</p></div>`;
     $('#w-locate').onclick = () => this.locate();
+    $('#w-quick').onclick = () => this.openQuick();
     $('#w-search').onclick = () => $('#search').focus();
     this.wireLmChips(body);
     this.wireTags(body);
@@ -445,13 +457,14 @@ export class UI {
   renderLogbook(body) {
     const cs = store.countries();
     if (!cs.length && !store.landmarks().length) {
-      body.innerHTML = `<div class="empty"><canvas data-icon="plane" style="width:84px;height:66px"></canvas><p>Your logbook is empty.<br>Click a country on the map to stamp your first one!</p></div>`;
+      body.innerHTML = `<div class="empty"><canvas data-icon="plane" style="width:84px;height:66px"></canvas><p>Your logbook is empty.<br>Click a country on the map to stamp your first one, or add a whole list at once.</p><button class="pix-btn primary small" id="lb-quick">＋ Quick add places</button></div>`;
+      $('#lb-quick').onclick = () => this.openQuick();
       return;
     }
     const byCont = {};
     for (const cid of cs) { const c = country(cid); (byCont[c?.cont || 'Other'] ||= []).push(cid); }
     const cities = store.cities(), states = store.states(), lms = store.landmarks();
-    let html = `<div class="row-btns" style="margin-bottom:6px"><input class="filter-input" id="lb-filter" placeholder="Filter your logbook…"></div>`;
+    let html = `<div class="row-btns" style="margin-bottom:6px;flex-wrap:nowrap"><input class="filter-input" id="lb-filter" placeholder="Filter your logbook…"><button class="pix-btn small primary" id="lb-quick" style="white-space:nowrap">＋ Quick add</button></div>`;
     for (const cont of [...CONTINENTS, 'Seven seas (open ocean)', 'Other']) {
       const list = byCont[cont]; if (!list) continue;
       list.sort((a, b) => country(a).name.localeCompare(country(b).name));
@@ -475,6 +488,7 @@ export class UI {
     body.innerHTML = html;
     $$('.lb-row', body).forEach(r => r.onclick = () => r.parentElement.classList.toggle('open'));
     this.wireTags(body);
+    $('#lb-quick').onclick = () => this.openQuick();
     $('#lb-filter').oninput = e => { const q = fold(e.target.value); $$('.lb-country', body).forEach(el => el.style.display = !q || el.dataset.name.includes(q) ? '' : 'none'); };
   }
 
@@ -681,6 +695,79 @@ export class UI {
     };
     $('#clear-btn').onclick = () => { if (confirm('Erase every place in your logbook? (Signed-in accounts sync this erase too.)')) { store.clear(); this.toast('Logbook cleared.'); } };
   }
+  // ───────────────────────── quick add ─────────────────────────
+  openQuick() {
+    $('#quick-sheet').hidden = false;
+    if (!this._quickWired) {
+      this._quickWired = true;
+      $('#quick-find').onclick = () => this.runQuick();
+      $('#quick-text').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this.runQuick(); };
+      $('#quick-add').onclick = () => this.addQuick();
+      $('#quick-clear').onclick = () => { this.qrows = []; $('#quick-text').value = ''; $('#quick-status').textContent = ''; this.renderQuick(); $('#quick-text').focus(); };
+    }
+    setTimeout(() => $('#quick-text').focus(), 50);
+  }
+  async runQuick() {
+    const queries = await parseQuick($('#quick-text').value);
+    if (!queries.length) return;
+    const run = (this._quickRun = Symbol());
+    this.qrows = queries.map(q => ({ q, cands: [], pick: 0, status: 'searching', on: true }));
+    $('#quick-status').textContent = 'Looking up…';
+    this.renderQuick();
+    await Promise.all(this.qrows.map(async r => {
+      try { r.cands = await resolveLocal(r.q); } catch (e) { console.warn(e); }
+      r.status = r.cands.length ? 'ok' : 'online';
+    }));
+    if (run !== this._quickRun) return;
+    this.renderQuick();
+    // anything not in our data: ask OpenStreetMap (one request per second)
+    for (const r of this.qrows.filter(r => r.status === 'online')) {
+      try { r.cands = await resolveOnline(r.q); } catch (e) { console.warn(e); }
+      if (run !== this._quickRun) return;
+      r.status = r.cands.length ? 'found-online' : 'none';
+      r.on = !!r.cands.length;
+      this.renderQuick();
+    }
+    const n = this.qrows.filter(r => r.on && r.cands.length).length;
+    $('#quick-status').textContent = `${n} of ${this.qrows.length} matched`;
+  }
+  renderQuick() {
+    const rows = this.qrows || [];
+    const icon = r => r.status === 'searching' || r.status === 'online' ? '⏳' : r.status === 'none' ? '✕'
+      : r.cands.length > 1 && r.cands[0].score - r.cands[1].score < 3 ? '❓' : r.status === 'found-online' ? '🌐' : '✓';
+    $('#quick-results').innerHTML = rows.map((r, i) => `<div class="qr ${r.on ? '' : 'off'}" data-i="${i}">
+      <span class="st" title="${r.status === 'found-online' ? 'Found on OpenStreetMap' : ''}">${icon(r)}</span>
+      <span class="q" title="${esc(r.q.text + (r.q.qual ? ', ' + r.q.qual : ''))}">${esc(r.q.text)}${r.q.qual ? `<small class="muted">, ${esc(r.q.qual)}</small>` : ''}</span>
+      ${r.cands.length ? `<select>${r.cands.map((c, j) => `<option value="${j}" ${j === r.pick ? 'selected' : ''}>${esc(candLabel(c))}${store.has(keyOf(c)) ? ' ✓ already logged' : ''}</option>`).join('')}</select>`
+        : `<span class="nf">${r.status === 'none' ? 'Couldn’t find this place, so check the spelling' : r.status === 'online' ? 'Not in our list, so searching online…' : 'Searching…'}</span>`}
+      <button class="skip" title="${r.on ? 'Skip' : 'Include'}">${r.on ? '✕' : '↺'}</button></div>`).join('');
+    $$('#quick-results .qr').forEach(el => {
+      const r = rows[+el.dataset.i];
+      const sel = $('select', el); if (sel) sel.onchange = () => { r.pick = +sel.value; };
+      $('.skip', el).onclick = () => { r.on = !r.on; this.renderQuick(); };
+    });
+    const n = rows.filter(r => r.on && r.cands.length).length;
+    $('#quick-foot').hidden = !rows.length;
+    $('#quick-add').textContent = `Add ${n} place${n === 1 ? '' : 's'} to my logbook`;
+    $('#quick-add').disabled = !n;
+  }
+  async addQuick() {
+    const picks = (this.qrows || []).filter(r => r.on && r.cands.length).map(r => r.cands[r.pick]);
+    if (!picks.length) return;
+    $('#quick-add').textContent = 'Adding…';
+    const entries = [];
+    for (const c of picks) {
+      try { const info = await this.describe(c.type, c.id, { cid: c.cid }); if (info) entries.push([info.key, info.data, info.parents]); }
+      catch (e) { console.warn(e); }
+    }
+    const added = store.addMany(entries);
+    $('#quick-sheet').hidden = true;
+    this.qrows = []; $('#quick-text').value = ''; this.renderQuick(); $('#quick-status').textContent = '';
+    this.toast(`<b>＋ ${entries.length} place${entries.length === 1 ? '' : 's'} logged</b>${added > entries.length ? ` (plus ${added - entries.length} countries/states)` : ''}`, 3500);
+    this.celebrate();
+    this.setTab('logbook');
+  }
+
   openTheme() { this.renderThemeSheet(); $('#theme-sheet').hidden = false; }
   renderThemeSheet() {
     const cur = store.settings.theme;
@@ -737,6 +824,7 @@ export class UI {
 }
 
 // ───────────────────────── helpers ─────────────────────────
+function keyOf(c) { return ({ country: 'c:', state: 's:', city: 'ci:', landmark: 'l:' })[c.type] + c.id; }
 function ckRow(key, name, sub, style, go, cap) {
   return `<div class="ck ${store.has(key) ? 'on' : ''}" data-key="${key}" data-go="${go}" style="${style}"><span class="bx"></span><span class="nm">${esc(name)}${cap ? ' <span class="cap">★</span>' : ''}</span><span class="sub">${esc(sub || '')}</span><button class="go" title="Show on map">›</button></div>`;
 }

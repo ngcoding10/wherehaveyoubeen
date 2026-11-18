@@ -38,6 +38,7 @@
         <button data-proj="globe" title="Globe mode">🌍 Globe</button>
         <button data-proj="mercator" title="Flat map mode">🗺️ Map</button>
       </div>
+      <button class="quick-btn" id="quick-btn" title="Add lots of places at once"><span>＋</span> Quick add</button>
       <button class="icon-btn" id="theme-btn" title="Theme & colours" aria-label="Theme and colours">🎨</button>
       <button class="account-btn" id="account-btn"><span class="acct-avatar" id="acct-avatar">G</span><span id="acct-label">Sign in</span></button>
     </div>
@@ -53,6 +54,7 @@
   <div class="map-ctrls">
     <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
     <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+    <button id="toggle-lm" title="Show / hide wonders" aria-label="Show or hide wonders" aria-pressed="true">🏛️</button>
     <button id="locate" title="Find me & check in" aria-label="Find my location">📍</button>
     <button id="go-home" title="Go to my home base" aria-label="Go to home">🏠</button>
     <button id="reset-view" title="Whole world" aria-label="Show the whole world">🌐</button>
@@ -88,6 +90,18 @@
         <label class="pix-btn small ghost">⬆ Import<input type="file" id="import-file" accept="application/json" hidden></label>
         <button class="pix-btn small danger" id="clear-btn">Reset</button>
       </div>
+    </div>
+  </div>
+
+  <!-- quick add sheet -->
+  <div class="sheet" id="quick-sheet" hidden>
+    <div class="sheet-card quick-card">
+      <div class="sheet-head"><h2>QUICK ADD</h2><button class="x" data-close>✕</button></div>
+      <p class="muted">Type the places you've been, separated by commas or new lines. Cities, states, countries and wonders all work, e.g. <i>London, Beijing, Miami, Paris, Texas, Japan, Eiffel Tower</i>.</p>
+      <textarea id="quick-text" rows="5" placeholder="London, Beijing, Miami&#10;Kyoto, Japan&#10;Bali&#10;Machu Picchu"></textarea>
+      <div class="row-btns"><button class="pix-btn primary" id="quick-find">Find places</button><span class="muted" id="quick-status"></span></div>
+      <div id="quick-results"></div>
+      <div class="row-btns quick-foot" id="quick-foot" hidden><button class="pix-btn primary" id="quick-add">Add to my logbook</button><button class="pix-btn ghost small" id="quick-clear">Start over</button></div>
     </div>
   </div>
 

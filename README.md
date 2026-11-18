@@ -61,16 +61,15 @@ python3 -m http.server 8000
 Then open http://localhost:8000. Opening `index.html` directly from disk won't work,
 because browsers block loading the data files that way.
 
-### Publish it free on GitHub Pages
+### Publish it on GitHub Pages
 
-The workflow in `.github/workflows/pages.yml` deploys the site whenever `main` is
-updated. Turn it on in the repo under **Settings → Pages → Source: GitHub Actions**.
-The site will then be at `https://<your-username>.github.io/wherehaveyoubeen/`.
+The site is published with **Settings → Pages → Deploy from a branch → `main` / root**. Every
+push to `main` goes live within a minute or two. There's no build step.
 
 ## Turn on Google sign-in
 
-Google sign-in uses Firebase (free tier). It needs a project that **you** own, so it
-can't ship pre-configured. It takes about 5 minutes:
+Google sign-in uses Firebase (free tier). It is already configured for this site
+(`js/firebase-config.js`). If you fork the project, create your own Firebase project like this:
 
 1. Go to <https://console.firebase.google.com/> and create a project. Analytics is optional.
 2. Go to **Build → Authentication → Get started → Sign-in method** and enable **Google**.

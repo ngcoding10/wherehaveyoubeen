@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Renders the share card + app icons from the app's own pixel art. Open via tools/make_assets.js. -->
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #050b18; }
+  #card { width: 1200px; height: 630px; position: relative; overflow: hidden; background: #050b18; font-family: 'Space Grotesk', sans-serif; color: #e9f0fb; }
+  #card .stars { position: absolute; inset: 0; }
+  #card .globe { position: absolute; right: -60px; top: 15px; width: 600px; height: 600px; border-radius: 50%; object-fit: cover; }
+  #card .txt { position: absolute; left: 70px; top: 120px; width: 560px; }
+  #card h1 { font-family: 'Press Start 2P', monospace; font-size: 44px; line-height: 1.45; margin: 26px 0 0; letter-spacing: 1px; text-shadow: 5px 5px 0 #000; }
+  #card p { font-size: 26px; line-height: 1.4; color: #b9c8de; margin: 26px 0 0; }
+  #card .strip { position: absolute; left: 70px; bottom: 54px; display: flex; gap: 14px; }
+  #card .strip canvas { width: 54px; height: 54px; image-rendering: pixelated; }
+  #card .plane { width: 84px; height: 66px; image-rendering: pixelated; }
+  .icon { display: block; image-rendering: pixelated; }
+</style>
+<div id="card">
+  <canvas class="stars" id="stars" width="1200" height="630"></canvas>
+  <img class="globe" id="globe" alt="">
+  <div class="txt"><canvas class="plane" id="plane"></canvas><h1>WHERE HAVE<br>YOU BEEN?</h1>
+    <p>Your world travel logbook. Colour in every country, state and city you've visited and collect 469 pixel wonders.</p></div>
+  <div class="strip" id="strip"></div>
+</div>
+<script type="module">
+  import { renderSprite, renderIcon } from '../js/sprites.js';
+  const qs = new URLSearchParams(location.search);
+  document.getElementById('globe').src = qs.get('globe') || '';
+  const st = document.getElementById('stars').getContext('2d');
+  let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 260; i++) { st.fillStyle = ['#fff', '#ffe9a8', '#a8d8ff'][i % 3]; st.globalAlpha = 0.3 + rnd() * 0.7; const s = rnd() < 0.15 ? 3 : 2; st.fillRect(Math.floor(rnd() * 1200), Math.floor(rnd() * 630), s, s); }
+  const plane = renderIcon('plane', '#fff', 6), pc = document.getElementById('plane'); pc.width = plane.width; pc.height = plane.height; pc.getContext('2d').drawImage(plane, 0, 0);
+  for (const k of ['eiffel', 'liberty', 'pyramid', 'tajmahal', 'greatwall', 'burj', 'christ', 'moai', 'onion']) {
+    const c = renderSprite(k, 3); c.style.cssText = 'width:54px;height:54px'; document.getElementById('strip').appendChild(c);
+  }
+  // app icon: plane on night sky with a teal "visited" block, drawn on a 24px pixel grid
+  window.makeIcon = (size, pad) => {
+    const c = document.createElement('canvas'); c.width = c.height = size; const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.fillStyle = '#0c1f38'; x.fillRect(0, 0, size, size);
+    const u = size / 24;
+    x.fillStyle = '#2ec4b6'; x.fillRect(u * 3, u * 15, u * 18, u * 4);
+    x.fillStyle = '#ffb703'; x.fillRect(u * 3, u * 19, u * 9, u * 2);
+    x.fillStyle = '#ff4d6d'; x.fillRect(u * 12, u * 19, u * 9, u * 2);
+    const p = renderIcon('plane', '#fff', 1); const s = Math.floor((size * (1 - pad)) / 14);
+    x.drawImage(p, Math.round((size - 14 * s) / 2), Math.round(u * 2), 14 * s, 11 * s);
+    return c.toDataURL('image/png');
+  };
+  window.ready = true;
+</script>

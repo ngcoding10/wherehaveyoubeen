@@ -4,17 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Where Have You Been?</title>
-  <meta name="description" content="An interactive world map logbook: click countries, states and cities you've visited and collect 8-bit landmarks.">
+  <meta name="description" content="A free interactive world map logbook. Colour in every country, state and city you've visited, add whole trips at once, and collect 469 pixel-art wonders. Works on any device, with optional Google sign-in.">
   <meta name="theme-color" content="#0c1f38">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect width='16' height='16' fill='%230c1f38'/><rect x='4' y='3' width='8' height='10' fill='%232ec4b6'/><rect x='3' y='4' width='10' height='8' fill='%232ec4b6'/><rect x='6' y='5' width='3' height='3' fill='%23ffb703'/><rect x='9' y='8' width='2' height='3' fill='%23ff4d6d'/></svg>">
+  <link rel="canonical" href="https://nicorgutierrez08-eng.github.io/wherehaveyoubeen/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Where Have You Been?">
+  <meta property="og:title" content="Where Have You Been? · your world travel logbook">
+  <meta property="og:description" content="Colour in every country, state and city you've visited, and collect 469 pixel-art wonders on an interactive globe.">
+  <meta property="og:url" content="https://nicorgutierrez08-eng.github.io/wherehaveyoubeen/">
+  <meta property="og:image" content="https://nicorgutierrez08-eng.github.io/wherehaveyoubeen/assets/share.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A globe with visited countries coloured in, next to pixel-art landmarks">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Where Have You Been? · your world travel logbook">
+  <meta name="twitter:description" content="Colour in every country, state and city you've visited, and collect 469 pixel-art wonders.">
+  <meta name="twitter:image" content="https://nicorgutierrez08-eng.github.io/wherehaveyoubeen/assets/share.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Been There">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preload" href="data/meta.json" as="fetch" crossorigin>
+  <link rel="preload" href="data/countries.geojson" as="fetch" crossorigin>
+  <link rel="preload" href="data/cities_major.json" as="fetch" crossorigin>
+  <link rel="modulepreload" href="js/main.js">
   <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="map" class="is-globe"></div>
+  <main id="map" class="is-globe" aria-label="Interactive world map"></main>
+  <noscript><p style="padding:40px;color:#fff;font-family:sans-serif">This interactive map needs JavaScript turned on.</p></noscript>
   <div id="stars" aria-hidden="true"></div>
 
   <!-- top bar -->
@@ -77,9 +102,10 @@
   </aside>
 
   <!-- theme sheet -->
-  <div class="sheet" id="theme-sheet" hidden>
+  <div class="sheet" id="theme-sheet" role="dialog" aria-modal="true" aria-label="Settings" hidden>
     <div class="sheet-card">
-      <div class="sheet-head"><h2>Map style</h2><button class="x" data-close>✕</button></div>
+      <div class="sheet-head"><h2>Settings</h2><button class="x" data-close aria-label="Close">✕</button></div>
+      <h3 style="margin-top:0">Map style</h3>
       <div class="theme-grid" id="theme-grid"></div>
       <h3>Logbook colours</h3>
       <div class="color-rows" id="color-rows"></div>
@@ -90,15 +116,18 @@
         <label class="pix-btn small ghost">⬆ Import<input type="file" id="import-file" accept="application/json" hidden></label>
         <button class="pix-btn small danger" id="clear-btn">Reset</button>
       </div>
+      <h3>About &amp; privacy</h3>
+      <p class="muted about">Your logbook is saved in this browser. If you sign in with Google, it's also saved to your own private account, which only you can read. Nothing is sold or shared, and there are no ads or trackers. Place names you type into Quick add that aren't in the built-in list are looked up on OpenStreetMap's public search service.</p>
+      <p class="muted about">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors via <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Borders by <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>. Cities by <a href="https://www.geonames.org/" target="_blank" rel="noopener">GeoNames</a> (CC BY 4.0). Built with <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>. Pixel art made for this site.</p>
     </div>
   </div>
 
   <!-- quick add sheet -->
-  <div class="sheet" id="quick-sheet" hidden>
+  <div class="sheet" id="quick-sheet" role="dialog" aria-modal="true" aria-label="Quick add places" hidden>
     <div class="sheet-card quick-card">
-      <div class="sheet-head"><h2>QUICK ADD</h2><button class="x" data-close>✕</button></div>
+      <div class="sheet-head"><h2>QUICK ADD</h2><button class="x" data-close aria-label="Close">✕</button></div>
       <p class="muted">Type the places you've been, separated by commas or new lines. Cities, states, countries and wonders all work, e.g. <i>London, Beijing, Miami, Paris, Texas, Japan, Eiffel Tower</i>.</p>
-      <textarea id="quick-text" rows="5" placeholder="London, Beijing, Miami&#10;Kyoto, Japan&#10;Bali&#10;Machu Picchu"></textarea>
+      <textarea id="quick-text" rows="5" aria-label="Places you have been" placeholder="London, Beijing, Miami&#10;Kyoto, Japan&#10;Bali&#10;Machu Picchu"></textarea>
       <div class="row-btns"><button class="pix-btn primary" id="quick-find">Find places</button><span class="muted" id="quick-status"></span></div>
       <div id="quick-results"></div>
       <div class="row-btns quick-foot" id="quick-foot" hidden><button class="pix-btn primary" id="quick-add">Add to my logbook</button><button class="pix-btn ghost small" id="quick-clear">Start over</button></div>
@@ -106,7 +135,7 @@
   </div>
 
   <!-- account sheet -->
-  <div class="sheet" id="account-sheet" hidden>
+  <div class="sheet" id="account-sheet" role="dialog" aria-modal="true" aria-label="Your account" hidden>
     <div class="sheet-card" id="account-card"></div>
   </div>
 

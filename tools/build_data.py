@@ -73,7 +73,16 @@ write_props_geojson(tmp1, [{'type': 'Feature', 'properties': {'id': s['id'], 'ci
 subprocess.check_call(['mapshaper', tmp0, '-simplify', '12%', 'keep-shapes', 'planar',
                        '-o', os.path.join(OUT, 'countries.geojson'), 'precision=0.001', 'format=geojson'])
 subprocess.check_call(['mapshaper', tmp1, '-simplify', '7%', 'keep-shapes', 'planar',
-                       '-o', os.path.join(OUT, 'states.geojson'), 'precision=0.001', 'format=geojson'])
+                       '-o', os.path.join(OUT, 'states.geojson'), 'precision=0.005', 'format=geojson'])
+# coarse rounding collapses a few tiny islands (Vatican, Maldives atolls): restore those from full precision
+with open(os.path.join(OUT, 'states.geojson')) as f:
+    sg = json.load(f)
+full = {sid: st['geom'].__geo_interface__ for sid, st in states.items()}
+for f in sg['features']:
+    if not f['geometry']:
+        f['geometry'] = json.loads(json.dumps(full[f['properties']['id']]))
+with open(os.path.join(OUT, 'states.geojson'), 'w') as f:
+    json.dump(sg, f, separators=(',', ':'))
 
 # ---------------- high-detail borders, one file per country (loaded when zoomed in) ----------------
 hd = os.path.join(RAW, '_s_hd.geojson')

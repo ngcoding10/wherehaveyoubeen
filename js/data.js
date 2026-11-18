@@ -6,13 +6,19 @@ let indexPromise = null;
 // 193 UN member states + the two UN observer states (Vatican, Palestine) = the usual "195 countries"
 export const UN195 = new Set(('AF AL DZ AD AO AG AR AM AU AT AZ BS BH BD BB BY BE BZ BJ BT BO BA BW BR BN BG BF BI CV KH CM CA CF TD CL CN CO KM CG CD CR CI HR CU CY CZ DK DJ DM DO EC EG SV GQ ER EE SZ ET FJ FI FR GA GM GE DE GH GR GD GT GN GW GY HT HN HU IS IN ID IR IQ IE IL IT JM JP JO KZ KE KI KP KR KW KG LA LV LB LS LR LY LI LT LU MG MW MY MV ML MT MH MR MU MX FM MD MC MN ME MA MZ MM NA NR NP NL NZ NI NE NG MK NO OM PK PW PA PG PY PE PH PL PT QA RO RU RW KN LC VC WS SM ST SA SN RS SC SL SG SK SI SB SO ZA SS ES LK SD SR SE CH SY TJ TZ TH TL TG TO TT TN TR TM TV UG UA AE GB US UY UZ VU VE VN YE ZM ZW VA PS').split(' '));
 
+let statesPromise = null;
+/** State/province borders (~600 KB) load after the map is on screen; await this before using them. */
+export function loadStates() {
+  if (!statesPromise) statesPromise = fetchJSON('data/states.geojson').then(g => (DATA.statesGeo = g));
+  return statesPromise;
+}
 export async function loadCore() {
-  const [meta, countries, states, major] = await Promise.all([
-    fetchJSON('data/meta.json'), fetchJSON('data/countries.geojson'),
-    fetchJSON('data/states.geojson'), fetchJSON('data/cities_major.json'),
+  const [meta, countries, major] = await Promise.all([
+    fetchJSON('data/meta.json'), fetchJSON('data/countries.geojson'), fetchJSON('data/cities_major.json'),
   ]);
-  Object.assign(DATA, { meta, countriesGeo: countries, statesGeo: states, major });
+  Object.assign(DATA, { meta, countriesGeo: countries, major });
   // pre-compute bboxes for point-in-polygon
+  countries.features = countries.features.filter(f => f.geometry);
   for (const f of countries.features) f._bbox = geomBBox(f.geometry);
   return DATA;
 }
@@ -91,8 +97,10 @@ export function countryAt(lon, lat) {
   return null;
 }
 export function stateAt(lon, lat, cid) {
+  if (!DATA.statesGeo) return null;
   for (const f of DATA.statesGeo.features) {
     if (cid && f.properties.cid !== cid) continue;
+    if (!f.geometry) continue;
     if (!f._bbox) f._bbox = geomBBox(f.geometry);
     const b = f._bbox;
     if (lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) continue;

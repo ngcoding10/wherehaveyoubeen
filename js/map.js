@@ -1,6 +1,6 @@
 // The map: MapLibre GL with our own vector data, globe + flat projections, pixel-art landmarks.
 import { store } from './store.js';
-import { DATA, loadCountryCities, cityMinZoom } from './data.js';
+import { DATA, loadCountryCities, cityMinZoom, loadStates } from './data.js';
 import { LANDMARKS } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 
@@ -52,7 +52,7 @@ export class WorldMap extends EventTarget {
     });
     this.map.touchZoomRotate.disableRotation();
     this.map.addControl(new maplibregl.AttributionControl({ compact: true,
-      customAttribution: 'Borders © <a href="https://www.naturalearthdata.com/" target="_blank">Natural Earth</a> · Cities © <a href="https://www.geonames.org/" target="_blank">GeoNames</a> (CC BY 4.0)' }), 'bottom-left');
+      customAttribution: 'Borders © <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> · Cities © <a href="https://www.geonames.org/" target="_blank" rel="noopener">GeoNames</a> (CC BY 4.0)' }), 'bottom-left');
     this._applyPadding();
     window.addEventListener('resize', () => { this._applyPadding(); if (store.settings.projection === 'mercator') this.applyProjection(); });
     return new Promise(res => this.map.on('load', () => { this._build(); res(this); }));
@@ -74,7 +74,9 @@ export class WorldMap extends EventTarget {
     // sources
     m.addSource('omt', { type: 'vector', url: 'https://tiles.openfreemap.org/planet' }); // real OpenStreetMap data
     m.addSource('countries', { type: 'geojson', data: DATA.countriesGeo, promoteId: 'id', tolerance: 0.3 });
-    m.addSource('states', { type: 'geojson', data: DATA.statesGeo, promoteId: 'id', tolerance: 0.3 });
+    m.addSource('states', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, promoteId: 'id', tolerance: 0.3 });
+    // state borders arrive a moment after the map is visible
+    loadStates().then(g => m.getSource('states').setData(g)).catch(console.warn);
     m.addSource('states-hd', { type: 'geojson', data: fc([]), tolerance: 0.2 });
     m.addSource('graticule', { type: 'geojson', data: graticule() });
     m.addSource('country-labels', { type: 'geojson', data: fc(Object.entries(meta.countries).map(([id, c]) =>
@@ -87,7 +89,8 @@ export class WorldMap extends EventTarget {
 
     const T = THEMES.midnight;
     const add = l => m.addLayer(l);
-    const NAME = ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
+    // Latin-script names only: readable for most visitors, and matches the bundled font ranges
+    const NAME = ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ''];
     const NONE = ['==', ['get', 'id'], ''];
     const fillOp = (a, b, c, d) => ['interpolate', ['linear'], ['zoom'], 3, a, 7, b, 11, c, 15, d];
     // land is the background; real OSM water is drawn on top of the visited colours, so coastlines are exact
@@ -95,7 +98,10 @@ export class WorldMap extends EventTarget {
       paint: { 'fill-color': ['match', ['get', 'class'], ['ice', 'glacier'], '#e9f1f7', 'sand', '#d9c9a0', 'rock', '#9a9aa2', T.wood],
         'fill-opacity': ['match', ['get', 'class'], ['ice', 'glacier'], 0.55, ['wood', 'forest'], 0.28, 0.14] } });
     add({ id: 'park', type: 'fill', source: 'omt', 'source-layer': 'park', minzoom: 8, paint: { 'fill-color': T.wood, 'fill-opacity': 0.25 } });
-    add({ id: 'countries-fill', type: 'fill', source: 'countries', paint: { 'fill-color': '#000', 'fill-opacity': 0 } }); // hit-testing only
+    // our own land shapes: visible when zoomed out (so the globe still has continents if OSM tiles are slow/down),
+    // invisible but still used for hit-testing when zoomed in (OSM detail takes over there)
+    add({ id: 'countries-fill', type: 'fill', source: 'countries', paint: { 'fill-color': T.land, 'fill-opacity': ['step', ['zoom'], 1, 5, 0] } });
+    m.moveLayer('countries-fill', 'landcover');
     add({ id: 'states-hit', type: 'fill', source: 'states', paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
     add({ id: 'states-hit-hd', type: 'fill', source: 'states-hd', paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
     add({ id: 'countries-visited', type: 'fill', source: 'countries', filter: NONE, paint: { 'fill-color': '#2ec4b6', 'fill-opacity': fillOp(0.95, 0.75, 0.45, 0.28) } });
@@ -211,7 +217,8 @@ export class WorldMap extends EventTarget {
   applyTheme() {
     const T = THEMES[store.settings.theme] || THEMES.midnight;
     const m = this.map, P = (l, k, v) => m.getLayer(l) && m.setPaintProperty(l, k, v);
-    P('bg', 'background-color', T.land);
+    P('bg', 'background-color', ['step', ['zoom'], T.ocean, 5, T.land]);
+    P('countries-fill', 'fill-color', T.land);
     P('water', 'fill-color', T.ocean);
     P('waterway', 'line-color', T.ocean);
     P('landcover', 'fill-color', ['match', ['get', 'class'], ['ice', 'glacier'], '#e9f1f7', 'sand', '#d9c9a0', 'rock', '#9a9aa2', T.wood]);

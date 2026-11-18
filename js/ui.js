@@ -1,6 +1,6 @@
 // Everything outside the map canvas: panels, popups, search, passport, stats, settings, account.
 import { store, DEFAULT_SETTINGS } from './store.js';
-import { DATA, UN195, country, stateMeta, loadCountryCities, loadCityIndex, flagHTML, fold, haversine, countryAt, stateAt, fmtPop, esc } from './data.js';
+import { loadStates, DATA, UN195, country, stateMeta, loadCountryCities, loadCityIndex, flagHTML, fold, haversine, countryAt, stateAt, fmtPop, esc } from './data.js';
 import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
@@ -198,6 +198,7 @@ export class UI {
     }
     if (type === 'landmark') {
       const l = LANDMARK_BY_ID[id]; if (!l) return null;
+      await loadStates().catch(() => {});
       const sid = stateAt(l.lon, l.lat, l.cc);
       return { key: 'l:' + id, cid: l.cc, sid, name: l.name, sub: `${CATEGORIES[l.cat]} · ${country(l.cc)?.name || ''}`, lm: l, lngLat: [l.lon, l.lat],
         data: {}, parents: [sid ? ['s:' + sid, { c: l.cc }] : null, ['c:' + l.cc, {}]].filter(Boolean) };
@@ -378,6 +379,7 @@ export class UI {
   }
 
   async renderStateExtra(el, info) {
+    await loadStates().catch(() => {});
     const sid = this.sel.id, cid = info.cid, C = store.settings.colors;
     const lms = LANDMARKS.filter(l => l.cc === cid && this.lmState(l) === sid);
     el.innerHTML = `${lms.length ? `<div class="p-sec"><h3>WONDERS HERE</h3><div class="lm-chips">${lms.map(l => lmChip(l)).join('')}</div></div>` : ''}
@@ -677,8 +679,18 @@ export class UI {
 
   // ───────────────────────── sheets ─────────────────────────
   wireSheets() {
-    $$('.sheet').forEach(s => s.addEventListener('click', e => { if (e.target === s || e.target.closest('[data-close]')) s.hidden = true; }));
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') $$('.sheet').forEach(s => s.hidden = true); });
+    $$('.sheet').forEach(s => s.addEventListener('click', e => { if (e.target === s || e.target.closest('[data-close]')) this.closeSheet(s); }));
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') $$('.sheet').forEach(s => { if (!s.hidden) this.closeSheet(s); });
+      // keep Tab inside an open dialog
+      if (e.key === 'Tab') {
+        const open = $$('.sheet').find(s => !s.hidden); if (!open) return;
+        const f = $$('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])', open).filter(el => !el.disabled && el.offsetParent);
+        if (!f.length) return;
+        if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+      }
+    });
     $('#auto-parents').onchange = e => store.setSetting('autoParents', e.target.checked);
     $('#export-btn').onclick = () => {
       const blob = new Blob([JSON.stringify({ app: 'where-have-you-been', exported: new Date().toISOString(), logbook: store.snapshot() }, null, 1)], { type: 'application/json' });
@@ -697,7 +709,7 @@ export class UI {
   }
   // ───────────────────────── quick add ─────────────────────────
   openQuick() {
-    $('#quick-sheet').hidden = false;
+    this.openSheet('quick-sheet', '#quick-text');
     if (!this._quickWired) {
       this._quickWired = true;
       $('#quick-find').onclick = () => this.runQuick();
@@ -705,7 +717,6 @@ export class UI {
       $('#quick-add').onclick = () => this.addQuick();
       $('#quick-clear').onclick = () => { this.qrows = []; $('#quick-text').value = ''; $('#quick-status').textContent = ''; this.renderQuick(); $('#quick-text').focus(); };
     }
-    setTimeout(() => $('#quick-text').focus(), 50);
   }
   async runQuick() {
     const queries = await parseQuick($('#quick-text').value);
@@ -768,7 +779,17 @@ export class UI {
     this.setTab('logbook');
   }
 
-  openTheme() { this.renderThemeSheet(); $('#theme-sheet').hidden = false; }
+  openSheet(id, focusSel) {
+    const el = $('#' + id);
+    this._sheetOpener = document.activeElement;
+    el.hidden = false;
+    (focusSel && $(focusSel, el) || $('button, input, textarea, select', el))?.focus();
+  }
+  closeSheet(el) {
+    el.hidden = true;
+    if (this._sheetOpener?.isConnected) this._sheetOpener.focus();
+  }
+  openTheme() { this.renderThemeSheet(); this.openSheet('theme-sheet', '.theme-card.active'); }
   renderThemeSheet() {
     const cur = store.settings.theme;
     $('#theme-grid').innerHTML = Object.entries(THEMES).map(([k, t]) => `<button class="theme-card ${k === cur ? 'active' : ''}" data-theme="${k}">
@@ -787,7 +808,7 @@ export class UI {
     $('#acct-avatar').innerHTML = u?.photo ? `<img src="${esc(u.photo)}" alt="" referrerpolicy="no-referrer">` : (u ? esc((u.name || 'U')[0]) : 'G');
     $('#acct-label').innerHTML = u ? `<span class="sync-dot ${cloud.status}"></span> ${esc((u.name || 'Account').split(' ')[0])}` : 'Sign in';
   }
-  openAccount() { this.renderAccount(); $('#account-sheet').hidden = false; }
+  openAccount() { this.renderAccount(); this.openSheet('account-sheet', '#g-signin'); }
   renderAccount() {
     const card = $('#account-card'), u = cloud.user;
     const G = `<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;

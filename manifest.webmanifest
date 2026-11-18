@@ -1,0 +1,14 @@
+{
+  "name": "Where Have You Been?",
+  "short_name": "Been There",
+  "description": "Your world travel logbook: colour in the countries, states and cities you've visited.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a1426",
+  "theme_color": "#0c1f38",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

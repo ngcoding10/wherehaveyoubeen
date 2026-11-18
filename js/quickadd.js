@@ -1,7 +1,7 @@
 // Quick add: turn free text like "London, Beijing, Miami, Paris Texas, Japan, Eiffel Tower"
 // into logbook entries. Matches against the app's own data first; anything not found is
 // looked up on OpenStreetMap's free Nominatim geocoder (no API key) and snapped to our places.
-import { DATA, loadCityIndex, loadCountryCities, fold, haversine, countryAt, stateAt, country, stateMeta } from './data.js';
+import { DATA, loadStates, loadCityIndex, loadCountryCities, fold, haversine, countryAt, stateAt, country, stateMeta } from './data.js';
 import { LANDMARKS } from './landmarks.js';
 
 const ALIASES = {
@@ -150,6 +150,7 @@ export async function resolveOnline({ text, qual }) {
     const kind = hit.addresstype || hit.type;
     if (kind === 'country') { out.push({ type: 'country', id: cid, label: country(cid).name, sub: country(cid).cont, cid, score: 90, online: true }); continue; }
     if (['state', 'province', 'region', 'state_district'].includes(kind)) {
+      await loadStates().catch(() => {});
       const sid = stateAt(lon, lat, cid);
       if (sid && fold(stateMeta(sid).name).includes(fold(text).slice(0, 4))) {
         out.push({ type: 'state', id: sid, label: stateMeta(sid).name, sub: country(cid).name, cid, score: 85, online: true });

@@ -63,6 +63,8 @@ export class UI {
     document.documentElement.dataset.theme = store.settings.theme;
     $('meta[name=theme-color]').content = (THEMES[store.settings.theme] || THEMES.midnight).ocean;
     $$('#proj-toggle button').forEach(b => b.classList.toggle('active', b.dataset.proj === store.settings.projection));
+    const pb = $('#proj-btn');
+    if (pb) { const globe = store.settings.projection !== 'mercator'; pb.textContent = globe ? '🗺️' : '🌍'; pb.title = pb.ariaLabel = globe ? 'Switch to flat map' : 'Switch to globe'; }
   }
 
   toast(html, ms = 2600) {
@@ -75,22 +77,20 @@ export class UI {
     $$('#proj-toggle button').forEach(b => b.onclick = () => { store.setSetting('projection', b.dataset.proj); });
     $('#theme-btn').onclick = () => this.openTheme();
     $('#quick-btn').onclick = () => this.openQuick();
+    $('#quick-fab').onclick = () => this.openQuick();
+    $('#theme-btn-m').onclick = () => this.openTheme();
+    $('#proj-btn').onclick = () => store.setSetting('projection', store.settings.projection === 'mercator' ? 'globe' : 'mercator');
     $('#account-btn').onclick = () => this.openAccount();
     this.wireSearch();
   }
   wireTabs() {
     $$('.tabs button').forEach(b => b.onclick = () => this.setTab(b.dataset.tab));
-    $('#panel-grip').onclick = () => {
-      const p = $('#panel');
-      if (p.classList.contains('min')) p.classList.remove('min');
-      else if (p.classList.contains('max')) { p.classList.remove('max'); p.classList.add('min'); }
-      else p.classList.add('max');
-    };
+    this.initSheet();
   }
   setTab(tab) {
     this.tab = tab;
     $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    $('#panel').classList.remove('min');
+    if (this.isPhone() && this.sheetState === 'peek') this.setSheet('half');
     this.renderPanel(true);
   }
   wireControls() {
@@ -135,6 +135,64 @@ export class UI {
     });
   }
 
+  // ───────────────────────── phone bottom sheet ─────────────────────────
+  isPhone() { return window.innerWidth <= 820; }
+  initSheet() {
+    const p = $('#panel'), head = $('#panel-head');
+    this.sheetState = 'peek';
+    const order = ['peek', 'half', 'full'];
+    $('#panel-grip').onclick = () => this.setSheet(order[(order.indexOf(this.sheetState) + 1) % 3]);
+    // drag the header (grip / stats / tabs) to resize, like Apple Maps
+    let drag = null;
+    head.addEventListener('pointerdown', e => {
+      if (!this.isPhone()) return;
+      drag = { y: e.clientY, h: p.getBoundingClientRect().height, t: performance.now(), moved: false, id: e.pointerId };
+    });
+    window.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = e.clientY - drag.y;
+      if (!drag.moved && Math.abs(dy) < 8) return;
+      if (!drag.moved) { drag.moved = true; p.classList.add('dragging'); try { head.setPointerCapture(e.pointerId); } catch {} }
+      const max = window.innerHeight - 70, min = 110;
+      p.style.height = Math.max(min, Math.min(max, drag.h - dy)) + 'px';
+    });
+    const end = e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag; drag = null;
+      if (!d.moved) return; // a plain tap: let the button handle it
+      p.classList.remove('dragging');
+      const h = p.getBoundingClientRect().height, v = (h - d.h) / Math.max(1, performance.now() - d.t); // px/ms, + = flicked up
+      p.style.height = '';
+      const H = { peek: this.sheetHeight('peek'), half: this.sheetHeight('half'), full: this.sheetHeight('full') };
+      let target = Object.entries(H).sort((a, b) => Math.abs(a[1] - h) - Math.abs(b[1] - h))[0][0];
+      if (v > 0.5) target = order[Math.min(2, order.indexOf(target) + (H[target] < h ? 1 : 0))];
+      if (v < -0.5) target = order[Math.max(0, order.indexOf(target) - (H[target] > h ? 1 : 0))];
+      this.setSheet(target);
+      // swallow the click that follows a drag
+      head.addEventListener('click', ev => { ev.stopPropagation(); ev.preventDefault(); }, { capture: true, once: true });
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => this.setSheet(this.sheetState, true));
+    this.setSheet('peek', true);
+  }
+  sheetHeight(state) {
+    const vh = window.innerHeight, safeB = parseFloat(getComputedStyle($('#panel')).paddingBottom) || 0;
+    return state === 'full' ? vh - 70 : state === 'half' ? vh * 0.56 : 132 + safeB;
+  }
+  setSheet(state, instant) {
+    const p = $('#panel');
+    this.sheetState = state;
+    p.classList.toggle('half', state === 'half');
+    p.classList.toggle('full', state === 'full');
+    document.body.classList.toggle('sheet-full', state === 'full');
+    $('#panel-grip').setAttribute('aria-label', state === 'full' ? 'Collapse panel' : 'Expand panel');
+    if (!this.isPhone()) return;
+    const h = Math.round(this.sheetHeight(state === 'full' ? 'half' : state));
+    document.documentElement.style.setProperty('--sheet-h', h + 'px');
+    this.map.setBottomPad(h + 10);
+  }
+
   // ───────────────────────── store events ─────────────────────────
   onStoreChange(keys) {
     this.map.refreshVisited();
@@ -167,7 +225,7 @@ export class UI {
     if (fly) this.flyToSel();
     const at = lngLat || info.lngLat;
     const phone = window.innerWidth <= 820;
-    if (phone) { this.map.closePopup(); if (this.tab !== 'explore') { this.setTab('explore'); } $('#panel').classList.remove('min'); }
+    if (phone) { this.map.closePopup(); if (this.tab !== 'explore') { this.setTab('explore'); } if (this.sheetState !== 'full') this.setSheet('half'); }
     else if (!noPopup && at) this.map.showPopup(at, this.popupHTML(), el => this.wirePopup(el));
     if (this.tab !== 'explore' && fly) this.setTab('explore');
     else if (this.tab === 'explore') this.renderPanel(true);
@@ -572,6 +630,9 @@ export class UI {
       [st.lms, 'wonders', 'var(--c-landmark)'], [st.pctWorld.toFixed(st.pctWorld < 10 ? 1 : 0) + '%', 'of world', 'var(--ink-3)'],
     ].map(([n, l, c]) => `<div class="rb"><b>${n}</b><span>${l}</span><i style="background:${c}"></i></div>`).join('');
     $('#brand-sub').textContent = st.un ? `${st.un} countries & counting` : 'your world logbook';
+    $('#sheet-peek').innerHTML = [[st.un, 'countries', 'var(--c-country)'], [st.states, 'states', 'var(--c-state)'], [st.cities, 'cities', 'var(--c-city)'],
+      [st.lms, 'wonders', 'var(--c-landmark)'], [st.pctWorld.toFixed(st.pctWorld < 10 ? 1 : 0) + '%', 'world', 'var(--ink-3)']]
+      .map(([n, l, c]) => `<div class="pk"><b>${n}</b><span>${l}</span><i style="background:${c}"></i></div>`).join('');
   }
   renderLegend() {
     const C = store.settings.colors;

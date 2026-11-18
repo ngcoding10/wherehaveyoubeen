@@ -79,25 +79,32 @@
   <div class="map-ctrls">
     <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
     <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+    <button id="proj-btn" class="phone-only" title="Switch globe / flat map" aria-label="Switch between globe and flat map">🗺️</button>
+    <button id="theme-btn-m" class="phone-only" title="Settings" aria-label="Settings and colours">🎨</button>
     <button id="toggle-lm" title="Show / hide wonders" aria-label="Show or hide wonders" aria-pressed="true">🏛️</button>
     <button id="locate" title="Find me & check in" aria-label="Find my location">📍</button>
     <button id="go-home" title="Go to my home base" aria-label="Go to home">🏠</button>
     <button id="reset-view" title="Whole world" aria-label="Show the whole world">🌐</button>
   </div>
 
+  <button class="fab phone-only" id="quick-fab" aria-label="Quick add places"><span>＋</span> Add places</button>
+
   <!-- hover tip -->
   <div class="hover-tip" id="hover-tip" hidden></div>
 
   <!-- side panel -->
   <aside class="panel" id="panel" aria-label="Logbook">
-    <button class="panel-grip" id="panel-grip" aria-label="Expand or collapse panel"><span></span></button>
-    <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="explore" class="active">Explore</button>
-      <button role="tab" data-tab="logbook">Logbook</button>
-      <button role="tab" data-tab="passport">Passport</button>
-      <button role="tab" data-tab="landmarks">Wonders</button>
-      <button role="tab" data-tab="stats">Stats</button>
-    </nav>
+    <div class="panel-head" id="panel-head">
+      <button class="panel-grip" id="panel-grip" aria-label="Expand or collapse panel"><span></span></button>
+      <div class="sheet-peek phone-only" id="sheet-peek"></div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="explore" class="active"><i aria-hidden="true">🧭</i><span>Explore</span></button>
+        <button role="tab" data-tab="logbook"><i aria-hidden="true">📖</i><span>Logbook</span></button>
+        <button role="tab" data-tab="passport"><i aria-hidden="true">🛂</i><span>Passport</span></button>
+        <button role="tab" data-tab="landmarks"><i aria-hidden="true">🏛️</i><span>Wonders</span></button>
+        <button role="tab" data-tab="stats"><i aria-hidden="true">📊</i><span>Stats</span></button>
+      </nav>
+    </div>
     <div class="panel-body" id="panel-body">
       <!-- shown instantly, replaced by the live panel once the map is ready -->
       <div class="p-title"><h2>Start your logbook</h2></div>

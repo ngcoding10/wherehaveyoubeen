@@ -60,8 +60,15 @@ export class WorldMap extends EventTarget {
   /** Keep the map centred in the area not covered by the side panel. */
   _applyPadding() {
     const w = this.container.clientWidth, h = this.container.clientHeight;
-    this.panelPad = w > 820 ? { top: 80, right: Math.min(440, w * 0.38) + 20, bottom: 0, left: 0 } : { top: 120, right: 0, bottom: h * 0.42, left: 0 };
+    this.panelPad = w > 820 ? { top: 80, right: Math.min(440, w * 0.38) + 20, bottom: 0, left: 0 }
+      : { top: 70, right: 0, bottom: Math.min(this.bottomPad ?? 150, h * 0.6), left: 0 };
     this.map.setPadding(this.panelPad);
+  }
+  /** phones: keep the map centred in the part not covered by the bottom sheet */
+  setBottomPad(px) {
+    if (this.container.clientWidth > 820) return;
+    this.bottomPad = px;
+    this._applyPadding();
   }
 
   _build() {
@@ -434,7 +441,7 @@ export class WorldMap extends EventTarget {
 // ---------- helpers ----------
 export function worldZoom(proj, el) {
   const w = el.clientWidth;
-  if (proj === 'globe') return w <= 820 ? 0.7 : w < 1200 ? 1.35 : 1.75;
+  if (proj === 'globe') return w <= 480 ? 0.95 : w <= 820 ? 1.2 : w < 1200 ? 1.35 : 1.75;
   return Math.max(0, Math.log2((w - (w > 820 ? Math.min(440, w * 0.38) + 20 : 0)) / 512) - 0.05);
 }
 function fc(features) { return { type: 'FeatureCollection', features }; }

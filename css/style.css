@@ -2,7 +2,7 @@
 :root {
   --pix: 'Press Start 2P', ui-monospace, monospace;
   --sans: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --c-country: #2ec4b6; --c-state: #ffb703; --c-city: #ff4d6d; --c-landmark: #ffd447;
+  --c-country: #3b82f6; --c-state: #22c55e; --c-city: #facc15; --c-landmark: #ff8a3d;
   --radius: 0px;
   --panel-w: min(420px, 38vw);
 }
@@ -314,7 +314,7 @@ canvas { image-rendering: pixelated; }
 .boot-inner canvas { width: 84px; animation: bob 1.2s steps(3) infinite; }
 .boot-title { font-family: var(--pix); font-size: 14px; margin: 18px 0; letter-spacing: 1px; }
 .boot-bar { width: 220px; height: 16px; margin: 0 auto; box-shadow: 0 0 0 3px #e9f0fb; padding: 3px; }
-.boot-bar span { display: block; height: 100%; width: 5%; background: #2ec4b6; transition: width .3s steps(5); }
+.boot-bar span { display: block; height: 100%; width: 5%; background: #3b82f6; transition: width .3s steps(5); }
 .boot-msg { font-size: 12px; margin-top: 14px; opacity: .7; }
 
 /* keyboard focus */

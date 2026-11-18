@@ -126,8 +126,8 @@ export class UI {
       let name, sub = '';
       if (f?.layer.id === 'landmarks') { name = f.properties.name; sub = store.has('l:' + f.properties.id) ? '★ collected' : CATEGORIES[f.properties.cat]; }
       else if (f) { name = f.properties.n; sub = store.has('ci:' + f.properties.id) ? '✓ been here' : 'city'; }
-      else if (d.state) { const s = stateMeta(d.state); name = s?.name; sub = country(d.country)?.name + (store.has('s:' + d.state) ? ' · ✓' : ''); }
-      else { name = country(d.country)?.name; sub = store.has('c:' + d.country) ? '✓ visited' : ''; }
+      else if (d.state) { const s = stateMeta(d.state); name = s?.name; sub = country(d.country)?.name + (store.isVisited('s:' + d.state) ? ' · ✓' : ''); }
+      else { name = country(d.country)?.name; sub = store.isVisited('c:' + d.country) ? '✓ visited' : ''; }
       tip.innerHTML = `${esc(name)}<small>${esc(sub)}</small>`;
       const r = M.container.getBoundingClientRect();
       tip.style.left = r.left + d.point.x + 'px'; tip.style.top = r.top + d.point.y + 'px';
@@ -236,7 +236,13 @@ export class UI {
   }
 
   toggle(info) {
+    if (store.isImpliedOnly(info.key)) {
+      const what = info.key.startsWith('c:') ? 'cities, states or wonders' : 'cities';
+      this.toast(`${esc(info.name)} is lit up because you've logged ${what} in it. Remove those to clear it.`, 4200);
+      return true;
+    }
     const on = store.toggle(info.key, info.data, info.parents);
+    if (!on && store.isVisited(info.key)) this.toast(`${esc(info.name)} stays lit up because you've logged places inside it.`, 4200);
     if (on) {
       const what = info.key.startsWith('l:') ? '★ Collected' : info.key.startsWith('c:') ? 'Stamped' : 'Logged';
       this.toast(`<b>${what}</b> ${esc(info.name)}`);
@@ -260,7 +266,7 @@ export class UI {
   // ───────────────────────── popup ─────────────────────────
   popupHTML() {
     const { type, info } = this.sel;
-    const on = store.has(info.key);
+    const on = store.isVisited(info.key);
     const icon = type === 'landmark' ? `<canvas data-sprite="${info.lm.sprite}"></canvas>` : flagHTML(info.cid);
     const extra = type === 'city' && info.city.p ? ` · pop. ${fmtPop(info.city.p)}` : '';
     const verb = type === 'landmark' ? (on ? '★ COLLECTED' : '☆ I’VE BEEN HERE') : (on ? '✓ BEEN HERE' : 'I’VE BEEN HERE');
@@ -287,7 +293,7 @@ export class UI {
   renderExplore(body) {
     if (!this.sel?.info) return this.renderWelcome(body);
     const { type, info } = this.sel;
-    const on = store.has(info.key);
+    const on = store.isVisited(info.key);
     const C = store.settings.colors;
     const col = { country: C.country, state: C.state, city: C.city, landmark: C.landmark }[type];
     const crumbs = [];
@@ -323,7 +329,7 @@ export class UI {
     const visitedCities = store.cities();
     if (type === 'country') {
       const m = info.meta;
-      const st = store.states().filter(s => stateMeta(s)?.cid === info.cid).length;
+      const st = store.visitedStates().filter(s => stateMeta(s)?.cid === info.cid).length;
       const ci = visitedCities.filter(([, c]) => c.c === info.cid).length;
       const lms = LANDMARKS.filter(l => l.cc === info.cid);
       kv.innerHTML = `<span><b>${st}</b>/${m.nstates} regions</span><span><b>${ci}</b> cities</span>${lms.length ? `<span><b>${lms.filter(l => store.has('l:' + l.id)).length}</b>/${lms.length} wonders</span>` : ''}<span>${esc(m.cont)}</span>${m.pop ? `<span>pop. ${fmtPop(m.pop)}</span>` : ''}`;
@@ -338,7 +344,7 @@ export class UI {
     }
     // reflect toggle state in the big button too
     const btn = $('#been-btn');
-    if (btn) { const on = store.has(info.key); btn.classList.toggle('on', on); }
+    if (btn) { const on = store.isVisited(info.key); btn.classList.toggle('on', on); }
   }
 
   async renderCountryExtra(el, info) {
@@ -420,13 +426,13 @@ export class UI {
         if (!info) return;
         this._suppressPanel = true;
         const on = this.toggle(info);
-        row.classList.toggle('on', on);
+        row.classList.toggle('on', store.isVisited(row.dataset.key));
       };
     });
   }
 
   renderWelcome(body) {
-    const n = store.countries().length;
+    const n = store.visitedCountries().length;
     const recent = Object.entries(store.book.items).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, 8);
     const day = Math.floor(Date.now() / 864e5);
     const spot = LANDMARKS[(day * 7919) % LANDMARKS.length];
@@ -457,7 +463,7 @@ export class UI {
 
   // ---- logbook ----
   renderLogbook(body) {
-    const cs = store.countries();
+    const cs = store.visitedCountries();
     if (!cs.length && !store.landmarks().length) {
       body.innerHTML = `<div class="empty"><canvas data-icon="plane" style="width:84px;height:66px"></canvas><p>Your logbook is empty.<br>Click a country on the map to stamp your first one, or add a whole list at once.</p><button class="pix-btn primary small" id="lb-quick">＋ Quick add places</button></div>`;
       $('#lb-quick').onclick = () => this.openQuick();
@@ -465,7 +471,7 @@ export class UI {
     }
     const byCont = {};
     for (const cid of cs) { const c = country(cid); (byCont[c?.cont || 'Other'] ||= []).push(cid); }
-    const cities = store.cities(), states = store.states(), lms = store.landmarks();
+    const cities = store.cities(), states = store.visitedStates(), lms = store.landmarks();
     let html = `<div class="row-btns" style="margin-bottom:6px;flex-wrap:nowrap"><input class="filter-input" id="lb-filter" placeholder="Filter your logbook…"><button class="pix-btn small primary" id="lb-quick" style="white-space:nowrap">＋ Quick add</button></div>`;
     for (const cont of [...CONTINENTS, 'Seven seas (open ocean)', 'Other']) {
       const list = byCont[cont]; if (!list) continue;
@@ -545,17 +551,17 @@ export class UI {
         return `<div class="cont-row"><span>${n}</span><div class="bar" style="--fill:var(--c-landmark)"><i style="width:calc(${(got / all.length) * 100}% - 4px)"></i></div><span class="n">${got}/${all.length}</span></div>`; }).join('')}</div>`;
   }
   computeStats() {
-    const cs = store.countries();
+    const cs = store.visitedCountries();
     const metaC = DATA.meta.countries;
     const totalArea = Object.values(metaC).reduce((a, c) => a + (c.area || 0), 0);
     const area = cs.reduce((a, id) => a + (metaC[id]?.area || 0), 0);
     const byCont = Object.fromEntries(CONTINENTS.map(c => [c, { got: 0, total: 0 }]));
-    for (const [id, c] of Object.entries(metaC)) { if (!UN195.has(id) || !byCont[c.cont]) continue; byCont[c.cont].total++; if (store.has('c:' + id)) byCont[c.cont].got++; }
+    for (const [id, c] of Object.entries(metaC)) { if (!UN195.has(id) || !byCont[c.cont]) continue; byCont[c.cont].total++; if (store.isVisited('c:' + id)) byCont[c.cont].got++; }
     if (byCont.Antarctica) { byCont.Antarctica.total = 1; byCont.Antarctica.got = store.has('c:AQ') ? 1 : 0; }
     const conts = new Set(cs.map(id => metaC[id]?.cont).filter(c => CONTINENTS.includes(c))).size;
     let far = null;
     if (store.home) for (const [, c] of store.cities()) { const d = haversine(store.home.lat, store.home.lon, c.lat, c.lon); if (!far || d > far.d) far = { n: c.n, d }; }
-    return { un: cs.filter(id => UN195.has(id)).length, terr: cs.filter(id => !UN195.has(id)).length, states: store.states().length, cities: store.cities().length,
+    return { un: cs.filter(id => UN195.has(id)).length, terr: cs.filter(id => !UN195.has(id)).length, states: store.visitedStates().length, cities: store.cities().length,
       lms: store.landmarks().length, pctWorld: totalArea ? (area / totalArea) * 100 : 0, byCont, conts, far };
   }
 
@@ -598,9 +604,9 @@ export class UI {
       const groups = [];
       const grp = (title, arr, fn, best) => { if (arr.length) groups.push({ title, arr, fn, best }); };
       const best = (arr, nameFn, adj = () => 0) => Math.min(...arr.map(x => score(nameFn(x)) + adj(x)));
-      grp('COUNTRIES', cs, ([id, c]) => [`${flagHTML(id)}<span>${esc(c.name)}</span><span class="sr-sub">${store.has('c:' + id) ? '✓ ' : ''}${esc(c.cont)}</span>`, ['country', id]], best(cs, ([, c]) => c.name) - 0.5);
+      grp('COUNTRIES', cs, ([id, c]) => [`${flagHTML(id)}<span>${esc(c.name)}</span><span class="sr-sub">${store.isVisited('c:' + id) ? '✓ ' : ''}${esc(c.cont)}</span>`, ['country', id]], best(cs, ([, c]) => c.name) - 0.5);
       grp('WONDERS', ls, l => [`<canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}</span><span class="sr-sub">${store.has('l:' + l.id) ? '★ ' : ''}${esc(country(l.cc)?.name || '')}</span>`, ['landmark', l.id]], best(ls, l => l.name) - 1);
-      grp('STATES & REGIONS', ss, ([id, s]) => [`${flagHTML(s.cid)}<span>${esc(s.name)}</span><span class="sr-sub">${store.has('s:' + id) ? '✓ ' : ''}${esc(country(s.cid)?.name)}</span>`, ['state', id]], best(ss, ([, s]) => s.name) - 0.2);
+      grp('STATES & REGIONS', ss, ([id, s]) => [`${flagHTML(s.cid)}<span>${esc(s.name)}</span><span class="sr-sub">${store.isVisited('s:' + id) ? '✓ ' : ''}${esc(country(s.cid)?.name)}</span>`, ['state', id]], best(ss, ([, s]) => s.name) - 0.2);
       grp('CITIES', ci, r => [`<span class="dot ${store.has('ci:' + r[0]) ? 'on' : ''}"></span><span>${esc(r[1])}</span><span class="sr-sub">${esc([r[6], country(r[2])?.name].filter(Boolean).join(', '))}</span>`, ['city', r[0], r[2]]],
         best(ci, r => r[1], r => r[5] >= 5e5 ? -1.5 : r[5] >= 1e5 ? -0.3 : 0));
       groups.sort((a, b) => a.best - b.best);
@@ -847,7 +853,7 @@ export class UI {
 // ───────────────────────── helpers ─────────────────────────
 function keyOf(c) { return ({ country: 'c:', state: 's:', city: 'ci:', landmark: 'l:' })[c.type] + c.id; }
 function ckRow(key, name, sub, style, go, cap) {
-  return `<div class="ck ${store.has(key) ? 'on' : ''}" data-key="${key}" data-go="${go}" style="${style}"><span class="bx"></span><span class="nm">${esc(name)}${cap ? ' <span class="cap">★</span>' : ''}</span><span class="sub">${esc(sub || '')}</span><button class="go" title="Show on map">›</button></div>`;
+  return `<div class="ck ${store.isVisited(key) ? 'on' : ''}" data-key="${key}" data-go="${go}" style="${style}"><span class="bx"></span><span class="nm">${esc(name)}${cap ? ' <span class="cap">★</span>' : ''}</span><span class="sub">${esc(sub || '')}</span><button class="go" title="Show on map">›</button></div>`;
 }
 function lmChip(l, extra) {
   return `<button class="lm-chip ${store.has('l:' + l.id) ? 'on' : ''}" data-id="${l.id}"><canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}${extra ? `<br><small class="muted">${extra}</small>` : ''}</span></button>`;

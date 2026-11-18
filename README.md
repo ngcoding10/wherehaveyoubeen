@@ -8,8 +8,7 @@ landmarks along the way.
 
 - **Globe mode and flat Map mode.** Switch at the top. Globe lets you zoom right out and
   spin the planet. Map is a classic flat world map you can zoom into.
-- **Countries, states and cities each get their own colour.** Defaults: countries teal,
-  states amber, cities raspberry pins, wonders gold. You can change all of them
+- **Countries, states and cities each get their own colour.** Defaults: countries blue, states green, cities yellow pins and wonders orange. You can change all of them
   (🎨 button). Places you haven't been stay grey.
 - **Real map detail when you zoom in.** Coastlines, islands, lakes, rivers, roads,
   parks, buildings and neighbourhood names come from OpenStreetMap, through the free

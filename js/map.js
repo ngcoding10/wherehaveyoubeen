@@ -7,11 +7,11 @@ import { renderSprite, renderIcon } from './sprites.js';
 const maplibregl = window.maplibregl;
 
 export const THEMES = {
-  midnight: { label: 'Midnight', road: '#5a6880', road2: '#4a566b', building: '#465063', wood: '#3f6b4f', river: '#16304f', ocean: '#0c1f38', land: '#3a4659', border: '#7d8aa3', stateLine: '#6a7891', grat: '#2a4a73',
+  midnight: { label: 'Midnight', road: '#5a6880', road2: '#4a566b', building: '#465063', wood: '#3f6b4f', river: '#16304f', ocean: '#0c1f38', land: '#4a4e57', border: '#7d8aa3', stateLine: '#6a7891', grat: '#2a4a73',
               text: '#dfe8f5', halo: '#0c1f38', ocLabel: '#4f78ad', selected: '#ffffff', sky: '#0a1830', horizon: '#3b6fb5' },
   atlas:    { label: 'Atlas',    road: '#f4efe4', road2: '#e8e2d5', building: '#c4bdae', wood: '#a3bb8a', river: '#9ec8c4', ocean: '#b4d4d0', land: '#d3cfc7', border: '#8c8274', stateLine: '#a69c8d', grat: '#93b9b5',
               text: '#3e352c', halo: '#efe9dc', ocLabel: '#5b8b86', selected: '#2b2118', sky: '#cfe3e0', horizon: '#f2e8d2' },
-  arcade:   { label: 'Arcade',   road: '#6c62b8', road2: '#575089', building: '#555170', wood: '#3e6a5c', river: '#22104a', ocean: '#170a35', land: '#46445a', border: '#8f7bff', stateLine: '#6c5fc0', grat: '#3a1f7a',
+  arcade:   { label: 'Arcade',   road: '#6c62b8', road2: '#575089', building: '#555170', wood: '#3e6a5c', river: '#22104a', ocean: '#170a35', land: '#4c4b55', border: '#8f7bff', stateLine: '#6c5fc0', grat: '#3a1f7a',
               text: '#f4eaff', halo: '#170a35', ocLabel: '#7d5cff', selected: '#00f5d4', sky: '#12062b', horizon: '#ff3ea5' },
   daylight: { label: 'Daylight', road: '#ffffff', road2: '#f3f4f6', building: '#cdd1d8', wood: '#bcd9b4', river: '#bfe0f2', ocean: '#cfe7f5', land: '#d9dce1', border: '#ffffff', stateLine: '#b9bfc8', grat: '#b7d7ea',
               text: '#2c3440', halo: '#f4f8fb', ocLabel: '#6c9cbd', selected: '#1d2433', sky: '#bfe0f5', horizon: '#ffffff' },
@@ -242,7 +242,7 @@ export class WorldMap extends EventTarget {
   refreshVisited() {
     const m = this.map; if (!m.getLayer('countries-fill')) return;
     const C = store.settings.colors, T = this.theme || THEMES.midnight;
-    const vc = store.countries(), vs = store.states(), vl = store.landmarks();
+    const vc = store.visitedCountries(), vs = store.visitedStates(), vl = store.landmarks();
     // countries whose high-detail borders are loaded draw from the HD source, the rest from the simplified one
     const hd = [...this.hd.keys()];
     const notHd = ['!', ['in', ['get', 'cid'], ['literal', hd]]];

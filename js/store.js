@@ -9,8 +9,10 @@ export const DEFAULT_SETTINGS = {
   projection: 'globe',
   autoParents: true,
   showLandmarks: true,
-  colors: { country: '#2ec4b6', state: '#ffb703', city: '#ff4d6d', landmark: '#ffd447' },
+  colors: { country: '#3b82f6', state: '#22c55e', city: '#facc15', landmark: '#ff8a3d' },
 };
+// colours from the first version; anyone still on them gets the new scheme automatically
+const OLD_DEFAULT_COLORS = { country: '#2ec4b6', state: '#ffb703', city: '#ff4d6d', landmark: '#ffd447' };
 
 function emptyBook() { return { items: {}, removed: {}, home: null, updated: 0 }; }
 
@@ -24,7 +26,11 @@ class Store extends EventTarget {
     super();
     this.book = Object.assign(emptyBook(), safeRead(LS_KEY) || {});
     const s = safeRead(LS_SETTINGS) || {};
-    this.settings = { ...DEFAULT_SETTINGS, ...s, colors: { ...DEFAULT_SETTINGS.colors, ...(s.colors || {}) } };
+    const saved = { ...(s.colors || {}) };
+    for (const k of Object.keys(OLD_DEFAULT_COLORS)) if ((saved[k] || '').toLowerCase() === OLD_DEFAULT_COLORS[k]) delete saved[k];
+    this.settings = { ...DEFAULT_SETTINGS, ...s, colors: { ...DEFAULT_SETTINGS.colors, ...saved } };
+    this.resolve = { stateCountry: () => null, landmarkCountry: () => null };
+    this._derived = null;
   }
   // ---- queries ----
   has(key) { return !!this.book.items[key]; }
@@ -35,6 +41,31 @@ class Store extends EventTarget {
   states() { return this.keys('s:'); }
   cities() { return this.entries('ci:'); }
   landmarks() { return this.keys('l:'); }
+
+  // ---- visited = logged directly OR implied by something logged inside it ----
+  /** e.g. logging a city also lights up its state and country on the map */
+  derived() {
+    if (this._derived) return this._derived;
+    const states = new Set(this.states()), countries = new Set(this.countries());
+    const impliedStates = new Set(), impliedCountries = new Set();
+    for (const [, c] of this.cities()) {
+      if (c.s && !states.has(c.s)) impliedStates.add(c.s);
+      if (c.c && !countries.has(c.c)) impliedCountries.add(c.c);
+    }
+    for (const sid of [...states, ...impliedStates]) { const cid = this.resolve.stateCountry(sid); if (cid && !countries.has(cid)) impliedCountries.add(cid); }
+    for (const lid of this.landmarks()) { const cid = this.resolve.landmarkCountry(lid); if (cid && !countries.has(cid)) impliedCountries.add(cid); }
+    return (this._derived = { states: [...states, ...impliedStates], countries: [...countries, ...impliedCountries], impliedStates, impliedCountries });
+  }
+  visitedStates() { return this.derived().states; }
+  visitedCountries() { return this.derived().countries; }
+  /** true if logged directly, or (for countries/states) implied by a city/wonder/state inside it */
+  isVisited(key) {
+    if (this.has(key)) return true;
+    if (key.startsWith('s:')) return this.derived().impliedStates.has(key.slice(2));
+    if (key.startsWith('c:')) return this.derived().impliedCountries.has(key.slice(2));
+    return false;
+  }
+  isImpliedOnly(key) { return !this.has(key) && this.isVisited(key); }
 
   // ---- mutations ----
   set(key, data = {}, { silent } = {}) {
@@ -81,6 +112,7 @@ class Store extends EventTarget {
   }
 
   _changed(keys) {
+    this._derived = null;
     this.book.updated = Date.now();
     safeWrite(LS_KEY, this.book);
     this.dispatchEvent(new CustomEvent('change', { detail: { keys } }));
@@ -104,6 +136,7 @@ class Store extends EventTarget {
     }
     if (b.home && (!a.home || (b.home.m || 0) > (a.home.m || 0))) { a.home = b.home; changed = true; }
     if (changed) {
+      this._derived = null;
       a.updated = Date.now();
       safeWrite(LS_KEY, a);
       if (!silent) this.dispatchEvent(new CustomEvent('change', { detail: { keys: ['*'] } }));

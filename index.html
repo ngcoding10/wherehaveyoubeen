@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Where Have You Been?</title>
+  <meta name="description" content="An interactive world map logbook: click countries, states and cities you've visited and collect 8-bit landmarks.">
+  <meta name="theme-color" content="#0c1f38">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect width='16' height='16' fill='%230c1f38'/><rect x='4' y='3' width='8' height='10' fill='%232ec4b6'/><rect x='3' y='4' width='10' height='8' fill='%232ec4b6'/><rect x='6' y='5' width='3' height='3' fill='%23ffb703'/><rect x='9' y='8' width='2' height='3' fill='%23ff4d6d'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="map" class="is-globe"></div>
+  <div id="stars" aria-hidden="true"></div>
+
+  <!-- top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <canvas id="brand-plane" width="56" height="44" aria-hidden="true"></canvas>
+      <div>
+        <h1>WHERE HAVE<br>YOU BEEN?</h1>
+        <div class="brand-sub" id="brand-sub">your world logbook</div>
+      </div>
+    </div>
+
+    <div class="search" role="search">
+      <svg viewBox="0 0 16 16" class="search-ico" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 1h4v1h1v1h1v4h-1v1h-1v1H6V8H5V7H4V3h1V2h1V1zm0 2v4h4V3H6zm5 6h1v1h1v1h1v1h1v2h-2v-1h-1v-1h-1v-1h-1V9z" fill="currentColor"/></svg>
+      <input id="search" type="search" placeholder="Search a country, state, city or landmark…" autocomplete="off" spellcheck="false" aria-label="Search places">
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
+
+    <div class="top-actions">
+      <div class="seg" id="proj-toggle" role="group" aria-label="Map mode">
+        <button data-proj="globe" title="Globe mode">🌍 Globe</button>
+        <button data-proj="mercator" title="Flat map mode">🗺️ Map</button>
+      </div>
+      <button class="icon-btn" id="theme-btn" title="Theme & colours" aria-label="Theme and colours">🎨</button>
+      <button class="account-btn" id="account-btn"><span class="acct-avatar" id="acct-avatar">G</span><span id="acct-label">Sign in</span></button>
+    </div>
+  </header>
+
+  <!-- stats ribbon -->
+  <div class="ribbon" id="ribbon"></div>
+
+  <!-- legend -->
+  <div class="legend" id="legend"></div>
+
+  <!-- map controls -->
+  <div class="map-ctrls">
+    <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+    <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+    <button id="locate" title="Find me & check in" aria-label="Find my location">📍</button>
+    <button id="go-home" title="Go to my home base" aria-label="Go to home">🏠</button>
+    <button id="reset-view" title="Whole world" aria-label="Show the whole world">🌐</button>
+  </div>
+
+  <!-- hover tip -->
+  <div class="hover-tip" id="hover-tip" hidden></div>
+
+  <!-- side panel -->
+  <aside class="panel" id="panel" aria-label="Logbook">
+    <button class="panel-grip" id="panel-grip" aria-label="Expand or collapse panel"><span></span></button>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="explore" class="active">Explore</button>
+      <button role="tab" data-tab="logbook">Logbook</button>
+      <button role="tab" data-tab="passport">Passport</button>
+      <button role="tab" data-tab="landmarks">Wonders</button>
+      <button role="tab" data-tab="stats">Stats</button>
+    </nav>
+    <div class="panel-body" id="panel-body"></div>
+  </aside>
+
+  <!-- theme sheet -->
+  <div class="sheet" id="theme-sheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head"><h2>Map style</h2><button class="x" data-close>✕</button></div>
+      <div class="theme-grid" id="theme-grid"></div>
+      <h3>Logbook colours</h3>
+      <div class="color-rows" id="color-rows"></div>
+      <label class="check"><input type="checkbox" id="auto-parents"> When I log a city, also mark its state &amp; country</label>
+      <h3>Your data</h3>
+      <div class="row-btns">
+        <button class="pix-btn small" id="export-btn">⬇ Export logbook</button>
+        <label class="pix-btn small ghost">⬆ Import<input type="file" id="import-file" accept="application/json" hidden></label>
+        <button class="pix-btn small danger" id="clear-btn">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- account sheet -->
+  <div class="sheet" id="account-sheet" hidden>
+    <div class="sheet-card" id="account-card"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="boot" id="boot">
+    <div class="boot-inner">
+      <canvas id="boot-plane" width="84" height="66"></canvas>
+      <div class="boot-title">WHERE HAVE YOU BEEN?</div>
+      <div class="boot-bar"><span id="boot-progress"></span></div>
+      <div class="boot-msg" id="boot-msg">Loading the world…</div>
+    </div>
+  </div>
+
+  <script src="vendor/maplibre/maplibre-gl.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

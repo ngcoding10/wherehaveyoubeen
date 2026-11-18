@@ -1,3 +1,4 @@
+import { LANDMARK_SPRITES } from './landmark-sprites.js';
 // 8-bit landmark sprites. Each sprite is 16x16, one char per pixel ('.' = transparent).
 // A 1px tinted outline is added automatically at render time (sprite becomes 18x18).
 export const PALETTE = {
@@ -918,6 +919,9 @@ export const SWAPS = {
   brick:  { w: 'e', l: 'm', c: 'w' },
   blue:   { w: 'c', l: 'B', c: 'N' },
 };
+
+// every landmark has its own sprite (keyed by landmark id); the classic ones above keep their names
+for (const [k, v] of Object.entries(LANDMARK_SPRITES)) if (!SPRITES[k]) SPRITES[k] = v;
 
 const cache = new Map();
 /** Render sprite to a canvas with outline, scaled by `scale` (nearest-neighbour). */

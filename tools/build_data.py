@@ -75,6 +75,20 @@ subprocess.check_call(['mapshaper', tmp0, '-simplify', '12%', 'keep-shapes', 'pl
 subprocess.check_call(['mapshaper', tmp1, '-simplify', '7%', 'keep-shapes', 'planar',
                        '-o', os.path.join(OUT, 'states.geojson'), 'precision=0.001', 'format=geojson'])
 
+# ---------------- high-detail borders, one file per country (loaded when zoomed in) ----------------
+hd = os.path.join(RAW, '_s_hd.geojson')
+subprocess.check_call(['mapshaper', tmp1, '-o', hd, 'precision=0.0001', 'format=geojson'])
+with open(hd) as f:
+    hd_feats = json.load(f)['features']
+os.makedirs(os.path.join(OUT, 'detail'), exist_ok=True)
+by_c = collections.defaultdict(list)
+for f in hd_feats:
+    f['properties'] = {'id': f['properties']['id'], 'cid': f['properties']['cid']}
+    by_c[f['properties']['cid']].append(f)
+for cid, feats in by_c.items():
+    with open(os.path.join(OUT, 'detail', cid + '.json'), 'w') as f:
+        json.dump({'type': 'FeatureCollection', 'features': feats}, f, separators=(',', ':'))
+
 # ---------------- cities ----------------
 pop_rows = []
 with open(os.path.join(RAW, 'cities500.txt'), encoding='utf-8') as f:

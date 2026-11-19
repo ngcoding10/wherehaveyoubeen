@@ -249,7 +249,17 @@ export class WorldMap extends EventTarget {
   refreshVisited() {
     const m = this.map; if (!m.getLayer('countries-fill')) return;
     const C = store.settings.colors, T = this.theme || THEMES.midnight;
-    const vc = store.visitedCountries(), vs = store.visitedStates(), vl = store.landmarks();
+    let vc = store.visitedCountries(), vs = store.visitedStates();
+    const vl = store.landmarks();
+    // comparing with a friend: colour countries by who has been there, hide states
+    let fill = C.country;
+    if (this.compare) {
+      const mine = new Set(this.compare.mine), theirs = new Set(this.compare.theirs);
+      const both = [...mine].filter(c => theirs.has(c)), onlyThem = [...theirs].filter(c => !mine.has(c));
+      vc = [...new Set([...mine, ...theirs])]; vs = [];
+      fill = ['case', ['in', ['coalesce', ['get', 'cid'], ['get', 'id']], ['literal', both]], '#a855f7',
+                      ['in', ['coalesce', ['get', 'cid'], ['get', 'id']], ['literal', onlyThem]], '#f43f5e', C.country];
+    }
     // countries whose high-detail borders are loaded draw from the HD source, the rest from the simplified one
     const hd = [...this.hd.keys()];
     const notHd = ['!', ['in', ['get', 'cid'], ['literal', hd]]];
@@ -257,7 +267,7 @@ export class WorldMap extends EventTarget {
     m.setFilter('countries-visited-hd', ['in', ['get', 'cid'], ['literal', vc]]);
     m.setFilter('states-fill', ['all', ['in', ['get', 'id'], ['literal', vs]], notHd]);
     m.setFilter('states-fill-hd', ['in', ['get', 'id'], ['literal', vs]]);
-    for (const l of ['countries-visited', 'countries-visited-hd']) m.setPaintProperty(l, 'fill-color', C.country);
+    for (const l of ['countries-visited', 'countries-visited-hd']) m.setPaintProperty(l, 'fill-color', fill);
     for (const l of ['states-fill', 'states-fill-hd']) m.setPaintProperty(l, 'fill-color', C.state);
     m.setFilter('landmark-glow', ['in', ['get', 'id'], ['literal', vl]]);
     m.setPaintProperty('landmark-glow', 'circle-color', C.landmark);
@@ -273,6 +283,7 @@ export class WorldMap extends EventTarget {
     const v = store.settings.showLandmarks === false ? 'none' : 'visible';
     for (const l of ['landmarks', 'landmark-glow']) if (this.map.getLayer(l)) this.map.setLayoutProperty(l, 'visibility', v);
   }
+  setCompare(cmp) { this.compare = cmp; this.refreshVisited(); }
   refreshColors() { this._makePins(); this.refreshVisited(); }
 
   // ---------- projection ----------

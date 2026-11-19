@@ -87,6 +87,25 @@ rules are what protect the data. When you first sign in, anything you logged whi
 signed out is merged into your account. Merges are done place by place, with the newest
 change winning, and deletions sync too.
 
+## Friends & leaderboard
+
+Signed-in users pick a unique **username** and add each other with friend requests,
+or by sharing an invite link (`…/?add=username`). Friendship is mutual, so you only
+see someone's map after they accept. The 👥 Friends tab has:
+
+- A **leaderboard** of you and your friends: countries, states, cities, wonders, % of the world.
+- A **head-to-head** with any friend: win/loss score and side-by-side bars for each stat.
+- **Overlap**: countries you've both been to, only you, and only them. You can also
+  colour it on the map (purple = both, blue = only you, pink = only them).
+
+Friends see your username, stats and visited places. They never see your notes, dates
+or home base, which stay in your private logbook.
+
+**This needs the Firestore rules in [`firestore.rules`](firestore.rules).** When they
+change, paste the whole file into Firebase console → Firestore Database → Rules →
+Publish. The rules are tested with the Firebase emulator (28 checks: privacy,
+forged requests, username theft, unfriending).
+
 ## Data & credits
 
 | What | Source | License |

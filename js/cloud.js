@@ -23,8 +23,22 @@ async function load() {
   ]);
   const a = app.initializeApp(firebaseConfig);
   fb = { app: a, auth: auth.getAuth(a), db: fs.getFirestore(a), A: auth, F: fs };
+  // local testing only: http://localhost:…/?emulator=1 talks to the Firebase emulators instead of the real project
+  if (location.hostname === 'localhost' && new URLSearchParams(location.search).has('emulator')) {
+    auth.connectAuthEmulator(fb.auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    fs.connectFirestoreEmulator(fb.db, '127.0.0.1', 8080);
+    window.__emuSignIn = async (email, name) => {
+      const pw = 'test-password-123';
+      let cred;
+      try { cred = await auth.signInWithEmailAndPassword(fb.auth, email, pw); }
+      catch { cred = await auth.createUserWithEmailAndPassword(fb.auth, email, pw); await auth.updateProfile(cred.user, { displayName: name || email }); }
+      return cred.user.uid;
+    };
+  }
   return fb;
 }
+/** The loaded Firebase SDK + app instances (for other modules such as friends). */
+export const getFirebase = load;
 
 export async function initCloud() {
   if (!cloud.enabled) return;

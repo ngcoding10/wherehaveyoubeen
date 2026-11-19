@@ -5,11 +5,13 @@ import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
 import { cloud, signIn, signOutUser } from './cloud.js';
+import { computeStats, CONTINENTS } from './stats.js';
+import { FriendsUI } from './friends-ui.js';
+import { social } from './social.js';
 import { parse as parseQuick, resolveLocal, resolveOnline, candLabel } from './quickadd.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const CONTINENTS = ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Antarctica'];
 const RANKS = [[0, 'Armchair Explorer', 'Every journey starts with one click.'], [1, 'Day Tripper', 'The passport has its first stamp.'],
   [3, 'Tourist', 'You know where the good snacks are.'], [6, 'Traveler', 'Packing is muscle memory now.'], [12, 'Explorer', 'Off the beaten path.'],
   [25, 'Globetrotter', 'Jet lag is a lifestyle.'], [50, 'Voyager', 'A quarter of the planet!'], [80, 'World Nomad', 'Home is wherever the Wi-Fi is.'],
@@ -24,6 +26,7 @@ export class UI {
     this.lmFilter = 'all';
     this.cityLookup = new Map();
     this.stateLmCache = new Map();
+    this.friendsUI = new FriendsUI(this);
   }
 
   start() {
@@ -341,8 +344,8 @@ export class UI {
   renderPanel(resetScroll) {
     const body = $('#panel-body');
     const scroll = resetScroll ? 0 : body.scrollTop;
-    const fn = { explore: this.renderExplore, logbook: this.renderLogbook, passport: this.renderPassport, landmarks: this.renderLandmarks, stats: this.renderStats }[this.tab];
-    fn.call(this, body);
+    if (this.tab === 'friends') this.friendsUI.render(body);
+    else ({ explore: this.renderExplore, logbook: this.renderLogbook, passport: this.renderPassport, landmarks: this.renderLandmarks, stats: this.renderStats })[this.tab].call(this, body);
     paintSprites(body);
     body.scrollTop = scroll;
   }
@@ -608,20 +611,7 @@ export class UI {
       <div class="p-sec"><h3>WONDER CATEGORIES</h3>${Object.entries(CATEGORIES).map(([k, n]) => { const all = LANDMARKS.filter(l => l.cat === k); const got = all.filter(l => store.has('l:' + l.id)).length;
         return `<div class="cont-row"><span>${n}</span><div class="bar" style="--fill:var(--c-landmark)"><i style="width:calc(${(got / all.length) * 100}% - 4px)"></i></div><span class="n">${got}/${all.length}</span></div>`; }).join('')}</div>`;
   }
-  computeStats() {
-    const cs = store.visitedCountries();
-    const metaC = DATA.meta.countries;
-    const totalArea = Object.values(metaC).reduce((a, c) => a + (c.area || 0), 0);
-    const area = cs.reduce((a, id) => a + (metaC[id]?.area || 0), 0);
-    const byCont = Object.fromEntries(CONTINENTS.map(c => [c, { got: 0, total: 0 }]));
-    for (const [id, c] of Object.entries(metaC)) { if (!UN195.has(id) || !byCont[c.cont]) continue; byCont[c.cont].total++; if (store.isVisited('c:' + id)) byCont[c.cont].got++; }
-    if (byCont.Antarctica) { byCont.Antarctica.total = 1; byCont.Antarctica.got = store.has('c:AQ') ? 1 : 0; }
-    const conts = new Set(cs.map(id => metaC[id]?.cont).filter(c => CONTINENTS.includes(c))).size;
-    let far = null;
-    if (store.home) for (const [, c] of store.cities()) { const d = haversine(store.home.lat, store.home.lon, c.lat, c.lon); if (!far || d > far.d) far = { n: c.n, d }; }
-    return { un: cs.filter(id => UN195.has(id)).length, terr: cs.filter(id => !UN195.has(id)).length, states: store.visitedStates().length, cities: store.cities().length,
-      lms: store.landmarks().length, pctWorld: totalArea ? (area / totalArea) * 100 : 0, byCont, conts, far };
-  }
+  computeStats() { return computeStats(); }
 
   renderRibbon() {
     const st = this.computeStats();
@@ -904,7 +894,9 @@ export class UI {
       card.innerHTML = `${head}<div class="acct-head"><span class="acct-avatar">${u.photo ? `<img src="${esc(u.photo)}" alt="" referrerpolicy="no-referrer">` : esc((u.name || 'U')[0])}</span>
         <div><b style="font-size:18px">${esc(u.name || '')}</b><div class="muted">${esc(u.email || '')}</div><div class="muted" style="margin-top:4px"><span class="sync-dot ${cloud.status}"></span> ${esc(st)}</div></div></div>
         <div class="p-sec"><h3>HOME BASE</h3><p class="muted">${h ? `🏠 ${esc(h.label)} <button class="pix-btn small ghost" id="acct-home-go">Go</button>` : 'Not set — use 📍 on the map to find yourself and tap “Set home”.'}</p></div>
+        <div class="p-sec"><h3>FRIENDS</h3><p class="muted">${social.me?.username ? `You're <b>@${esc(social.me.username)}</b>.` : 'Pick a username so friends can add you.'} <button class="pix-btn small ghost" id="acct-friends">Open Friends ›</button></p></div>
         <div class="row-btns" style="margin-top:20px"><button class="pix-btn small" id="g-signout">Sign out</button></div>`;
+      $('#acct-friends').onclick = () => { this.closeSheet($('#account-sheet')); this.setTab('friends'); };
       $('#g-signout').onclick = async () => { await signOutUser(); this.toast('Signed out. Your logbook stays on this device.'); };
       const g = $('#acct-home-go'); if (g) g.onclick = () => { $('#account-sheet').hidden = true; this.map.flyTo(h.lon, h.lat, 9); };
     }

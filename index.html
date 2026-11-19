@@ -82,6 +82,7 @@
     <button id="proj-btn" class="phone-only" title="Switch globe / flat map" aria-label="Switch between globe and flat map">🗺️</button>
     <button id="theme-btn-m" class="phone-only" title="Settings" aria-label="Settings and colours">🎨</button>
     <button id="toggle-lm" title="Show / hide wonders" aria-label="Show or hide wonders" aria-pressed="true">🏛️</button>
+    <button id="toggle-wish" title="Show / hide wishlist" aria-label="Show or hide your wishlist" aria-pressed="true">⭐</button>
     <button id="locate" title="Find me & check in" aria-label="Find my location">📍</button>
     <button id="go-home" title="Go to my home base" aria-label="Go to home">🏠</button>
     <button id="reset-view" title="Whole world" aria-label="Show the whole world">🌐</button>
@@ -142,6 +143,7 @@
     <div class="sheet-card quick-card">
       <div class="sheet-head"><h2>QUICK ADD</h2><button class="x" data-close aria-label="Close">✕</button></div>
       <p class="muted">Type the places you've been, separated by commas or new lines. Cities, states, countries and wonders all work, e.g. <i>London, Beijing, Miami, Paris, Texas, Japan, Eiffel Tower</i>.</p>
+      <div class="seg qmode" role="group" aria-label="Add to"><button data-qm="been" class="active">✓ Been there</button><button data-qm="wish">☆ Wishlist</button></div>
       <textarea id="quick-text" rows="5" aria-label="Places you have been" placeholder="London, Beijing, Miami&#10;Kyoto, Japan&#10;Bali&#10;Machu Picchu"></textarea>
       <div class="row-btns"><button class="pix-btn primary" id="quick-find">Find places</button><span class="muted" id="quick-status"></span></div>
       <div id="quick-results"></div>

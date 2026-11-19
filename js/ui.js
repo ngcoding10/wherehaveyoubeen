@@ -110,6 +110,15 @@ export class UI {
       syncLm();
       this.toast(store.settings.showLandmarks ? '🏛️ Wonders shown (zoom in a little to see them)' : '🏛️ Wonders hidden');
     };
+    const wBtn = $('#toggle-wish');
+    const syncW = () => { const on = store.settings.showWishlist !== false; wBtn.classList.toggle('off', !on); wBtn.setAttribute('aria-pressed', on); wBtn.title = on ? 'Hide wishlist' : 'Show wishlist'; };
+    syncW();
+    wBtn.onclick = () => {
+      store.setSetting('showWishlist', store.settings.showWishlist === false);
+      syncW();
+      const n = store.wishEntries().length;
+      this.toast(store.settings.showWishlist ? (n ? `⭐ Wishlist shown (${n} place${n === 1 ? '' : 's'})` : '⭐ Your wishlist is empty, so tap ☆ on any place to add it') : '⭐ Wishlist hidden');
+    };
     $('#go-home').onclick = () => {
       const h = store.home;
       if (!h) return this.toast('No home base yet — tap <b>📍</b> to find yourself, then “Set as home”.');
@@ -213,6 +222,7 @@ export class UI {
     if (path === 'theme') this.map.applyTheme();
     if (path === 'projection') this.map.applyProjection();
     if (path === 'showLandmarks') this.map.applyLandmarkVisibility();
+    if (path === 'showWishlist') this.map.refreshVisited();
     if (path.startsWith('colors')) { this.map.refreshColors(); this.renderLegend(); this.renderRibbon(); }
     if (!$('#theme-sheet').hidden) this.renderThemeSheet();
   }
@@ -303,12 +313,19 @@ export class UI {
       return true;
     }
     const on = store.toggle(info.key, info.data, info.parents);
+    if (on && store.isWished(info.key)) { this.toast(`⭐ Wishlist ✓, you made it to <b>${esc(info.name)}</b>!`, 3500); this.celebrate(); return on; }
     if (!on && store.isVisited(info.key)) this.toast(`${esc(info.name)} stays lit up because you've logged places inside it.`, 4200);
     if (on) {
       const what = info.key.startsWith('l:') ? '★ Collected' : info.key.startsWith('c:') ? 'Stamped' : 'Logged';
       this.toast(`<b>${what}</b> ${esc(info.name)}`);
       if (info.key.startsWith('c:')) this.celebrate();
     }
+    return on;
+  }
+  toggleWish(info) {
+    const on = store.toggleWish(info.key, info.data);
+    this.toast(on ? `☆ <b>${esc(info.name)}</b> added to your wishlist` : `Removed ${esc(info.name)} from your wishlist`);
+    if (on && store.settings.showWishlist === false) { store.setSetting('showWishlist', true); $('#toggle-wish').classList.remove('off'); }
     return on;
   }
   celebrate() {
@@ -332,11 +349,12 @@ export class UI {
     const extra = type === 'city' && info.city.p ? ` · pop. ${fmtPop(info.city.p)}` : '';
     const verb = type === 'landmark' ? (on ? '★ COLLECTED' : '☆ I’VE BEEN HERE') : (on ? '✓ BEEN HERE' : 'I’VE BEEN HERE');
     return `<div class="pop-h">${icon}<div><b>${esc(info.name)}</b><small>${esc(info.sub)}${extra}</small></div></div>
-      <div class="pop-btns"><button class="pix-btn ${on ? 'primary' : ''}" data-act="toggle">${verb}</button><button class="pix-btn ghost" data-act="explore">EXPLORE ›</button></div>`;
+      <div class="pop-btns"><button class="pix-btn ${on ? 'primary' : ''}" data-act="toggle">${verb}</button>${!on || store.isWished(info.key) ? `<button class="pix-btn ghost star ${store.isWished(info.key) ? 'on' : ''}" data-act="wish" title="${store.isWished(info.key) ? 'Remove from wishlist' : 'Add to wishlist'}" aria-label="Wishlist">${store.isWished(info.key) ? '★' : '☆'}</button>` : ''}<button class="pix-btn ghost" data-act="explore">EXPLORE ›</button></div>`;
   }
   wirePopup(el) {
     paintSprites(el);
     $('[data-act=toggle]', el).onclick = () => this.toggle(this.sel.info);
+    const w = $('[data-act=wish]', el); if (w) w.onclick = () => this.toggleWish(this.sel.info);
     $('[data-act=explore]', el).onclick = () => { this.map.closePopup(); this.flyToSel(); this.setTab('explore'); };
   }
 
@@ -374,6 +392,13 @@ export class UI {
       <div id="explore-extra"></div>`;
     $$('[data-go]', body).forEach(a => a.onclick = () => { const [t, i] = a.dataset.go.split(':'); this.select(t, i, { fly: true }); });
     $('#been-btn').onclick = () => this.toggle(info);
+    if (!on || store.isWished(info.key)) {
+      const wb = document.createElement('button');
+      wb.className = 'pix-btn wish-btn' + (store.isWished(info.key) ? ' on' : '');
+      wb.innerHTML = store.isWished(info.key) ? '★ ON YOUR WISHLIST' : '☆ ADD TO WISHLIST';
+      wb.onclick = () => this.toggleWish(info);
+      $('#been-btn').after(wb);
+    }
     const save = () => { this._suppressPanel = true; store.set(info.key, { d: $('#f-date').value, note: $('#f-note').value }); };
     if (on) { $('#f-date').onchange = save; $('#f-note').onchange = save; }
     this.updateExploreCounts();
@@ -494,7 +519,7 @@ export class UI {
 
   renderWelcome(body) {
     const n = store.visitedCountries().length;
-    const recent = Object.entries(store.book.items).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, 8);
+    const recent = Object.entries(store.book.items).filter(([k]) => !k.startsWith('w:')).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, 8);
     const day = Math.floor(Date.now() / 864e5);
     const spot = LANDMARKS[(day * 7919) % LANDMARKS.length];
     body.innerHTML = `
@@ -524,16 +549,54 @@ export class UI {
 
   // ---- logbook ----
   renderLogbook(body) {
+    const nW = store.wishEntries().length;
+    const sw = `<div class="seg lb-mode" role="group" aria-label="Show"><button data-lbm="been" class="${this.lbMode !== 'wish' ? 'active' : ''}">✓ Been</button><button data-lbm="wish" class="${this.lbMode === 'wish' ? 'active' : ''}">☆ Wishlist${nW ? ` (${nW})` : ''}</button></div>`;
+    const wireSw = () => $$('[data-lbm]', body).forEach(b => b.onclick = () => { this.lbMode = b.dataset.lbm; this.renderPanel(true); });
+    if (this.lbMode === 'wish') { this.renderWishlist(body, sw); wireSw(); return; }
+    this.renderBeen(body, sw); wireSw();
+  }
+  renderWishlist(body, sw) {
+    const W = store.wishEntries();
+    const groups = { c: ['COUNTRIES', 'country'], s: ['STATES & REGIONS', 'state'], ci: ['CITIES', 'city'], l: ['WONDERS', 'landmark'] };
+    const nameOf = (t, id, v) => t === 'c' ? country(id)?.name : t === 's' ? stateMeta(id)?.name : t === 'ci' ? v.n : LANDMARK_BY_ID[id]?.name;
+    const subOf = (t, id, v) => t === 'c' ? country(id)?.cont : t === 's' ? country(stateMeta(id)?.cid)?.name : t === 'ci' ? country(v.c)?.name : country(LANDMARK_BY_ID[id]?.cc)?.name;
+    const iconOf = (t, id, v) => t === 'l' ? `<canvas data-sprite="${LANDMARK_BY_ID[id]?.sprite}" style="width:30px;height:30px"></canvas>` : flagHTML(t === 'c' ? id : t === 's' ? stateMeta(id)?.cid : v.c);
+    const done = W.filter(([k]) => store.isVisited(k)).length;
+    let html = sw + `<div class="row-btns" style="margin:10px 0 4px"><button class="pix-btn small primary" id="wl-quick">＋ Add places to wishlist</button></div>`;
+    if (!W.length) html += `<div class="empty"><p>Your wishlist is empty.<br>Tap <b>☆</b> on any country, city or wonder, or use Quick add, to save places you want to go. They show on the map with diagonal stripes.</p></div>`;
+    else html += `<p class="muted">${W.length} place${W.length === 1 ? '' : 's'} on your wishlist${done ? ` · ${done} already visited 🎉` : ''}. Shown on the map with stripes (toggle with ⭐).</p>`;
+    for (const [t, [title, type]] of Object.entries(groups)) {
+      const list = W.filter(([k]) => k.startsWith(t + ':')).map(([k, v]) => [k.slice(t.length + 1), v, k]);
+      if (!list.length) continue;
+      list.sort((a, b) => (nameOf(t, a[0], a[1]) || '').localeCompare(nameOf(t, b[0], b[1]) || ''));
+      html += `<div class="cont-h"><span>${title}</span><span>${list.length}</span></div>` + list.map(([id, v, k]) => {
+        const been = store.isVisited(k);
+        return `<div class="wl ${been ? 'done' : ''}"><button class="wl-go" data-sel="${type}:${id}:${v.c || ''}">${iconOf(t, id, v)}<span><b>${esc(nameOf(t, id, v) || id)}</b><small>${esc(subOf(t, id, v) || '')}</small></span></button>
+          ${been ? '<span class="wl-done">✓ been</span>' : `<button class="pix-btn small" data-been="${esc(k)}" data-type="${type}" data-id="${esc(id)}" data-cid="${esc(v.c || '')}" title="Mark as visited">✓ Been</button>`}
+          <button class="wl-x" data-unwish="${esc(k)}" title="Remove from wishlist" aria-label="Remove from wishlist">✕</button></div>`;
+      }).join('');
+    }
+    body.innerHTML = html;
+    paintSprites(body);
+    this.wireTags(body);
+    $('#wl-quick').onclick = () => this.openQuick('wish');
+    $$('[data-unwish]', body).forEach(b => b.onclick = () => store.remove('w:' + b.dataset.unwish));
+    $$('[data-been]', body).forEach(b => b.onclick = async () => {
+      const info = await this.describe(b.dataset.type, b.dataset.id, { cid: b.dataset.cid });
+      if (info && !store.isVisited(info.key)) this.toggle(info);
+    });
+  }
+  renderBeen(body, sw) {
     const cs = store.visitedCountries();
     if (!cs.length && !store.landmarks().length) {
-      body.innerHTML = `<div class="empty"><canvas data-icon="plane" style="width:84px;height:66px"></canvas><p>Your logbook is empty.<br>Click a country on the map to stamp your first one, or add a whole list at once.</p><button class="pix-btn primary small" id="lb-quick">＋ Quick add places</button></div>`;
+      body.innerHTML = sw + `<div class="empty"><canvas data-icon="plane" style="width:84px;height:66px"></canvas><p>Your logbook is empty.<br>Click a country on the map to stamp your first one, or add a whole list at once.</p><button class="pix-btn primary small" id="lb-quick">＋ Quick add places</button></div>`;
       $('#lb-quick').onclick = () => this.openQuick();
       return;
     }
     const byCont = {};
     for (const cid of cs) { const c = country(cid); (byCont[c?.cont || 'Other'] ||= []).push(cid); }
     const cities = store.cities(), states = store.visitedStates(), lms = store.landmarks();
-    let html = `<div class="row-btns" style="margin-bottom:6px;flex-wrap:nowrap"><input class="filter-input" id="lb-filter" placeholder="Filter your logbook…"><button class="pix-btn small primary" id="lb-quick" style="white-space:nowrap">＋ Quick add</button></div>`;
+    let html = sw + `<div class="row-btns" style="margin:10px 0 6px;flex-wrap:nowrap"><input class="filter-input" id="lb-filter" placeholder="Filter your logbook…"><button class="pix-btn small primary" id="lb-quick" style="white-space:nowrap">＋ Quick add</button></div>`;
     for (const cont of [...CONTINENTS, 'Seven seas (open ocean)', 'Other']) {
       const list = byCont[cont]; if (!list) continue;
       list.sort((a, b) => country(a).name.localeCompare(country(b).name));
@@ -631,6 +694,7 @@ export class UI {
       <div class="lg"><span class="sw" style="background:${C.state}"></span>State / region</div>
       <div class="lg"><span class="sw" style="background:${C.city}"></span>City</div>
       <div class="lg"><span class="sw" style="background:${C.landmark}"></span>Wonder collected</div>
+      <div class="lg"><span class="sw hatch" style="--wish:${C.wish}"></span>Wishlist</div>
       <div class="lg"><span class="sw" style="background:${(THEMES[store.settings.theme] || THEMES.midnight).land}"></span>Not yet</div>`;
   }
 
@@ -765,15 +829,26 @@ export class UI {
     $('#clear-btn').onclick = () => { if (confirm('Erase every place in your logbook? (Signed-in accounts sync this erase too.)')) { store.clear(); this.toast('Logbook cleared.'); } };
   }
   // ───────────────────────── quick add ─────────────────────────
-  openQuick() {
+  openQuick(mode) {
     this.openSheet('quick-sheet', '#quick-text');
+    this.setQuickMode(mode || this.quickMode || 'been');
     if (!this._quickWired) {
       this._quickWired = true;
+      $$('[data-qm]').forEach(b => b.onclick = () => this.setQuickMode(b.dataset.qm));
       $('#quick-find').onclick = () => this.runQuick();
       $('#quick-text').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this.runQuick(); };
       $('#quick-add').onclick = () => this.addQuick();
       $('#quick-clear').onclick = () => { this.qrows = []; $('#quick-text').value = ''; $('#quick-status').textContent = ''; this.renderQuick(); $('#quick-text').focus(); };
     }
+  }
+  setQuickMode(mode) {
+    this.quickMode = mode;
+    $$('[data-qm]').forEach(b => b.classList.toggle('active', b.dataset.qm === mode));
+    $('#quick-text').setAttribute('aria-label', mode === 'wish' ? 'Places you want to go' : 'Places you have been');
+    $('#quick-text').placeholder = mode === 'wish' ? 'Iceland, Kyoto, Machu Picchu\nBali\nNew Zealand' : 'London, Beijing, Miami\nKyoto, Japan\nBali\nMachu Picchu';
+    $('#quick-sheet h2').textContent = mode === 'wish' ? 'ADD TO WISHLIST' : 'QUICK ADD';
+    if (this.qrows?.length) this.renderQuick();
+    if (!$('#quick-sheet').hidden) $('#quick-text').focus();
   }
   async runQuick() {
     const queries = await parseQuick($('#quick-text').value);
@@ -806,7 +881,7 @@ export class UI {
     $('#quick-results').innerHTML = rows.map((r, i) => `<div class="qr ${r.on ? '' : 'off'}" data-i="${i}">
       <span class="st" title="${r.status === 'found-online' ? 'Found on OpenStreetMap' : ''}">${icon(r)}</span>
       <span class="q" title="${esc(r.q.text + (r.q.qual ? ', ' + r.q.qual : ''))}">${esc(r.q.text)}${r.q.qual ? `<small class="muted">, ${esc(r.q.qual)}</small>` : ''}</span>
-      ${r.cands.length ? `<select>${r.cands.map((c, j) => `<option value="${j}" ${j === r.pick ? 'selected' : ''}>${esc(candLabel(c))}${store.has(keyOf(c)) ? ' ✓ already logged' : ''}</option>`).join('')}</select>`
+      ${r.cands.length ? `<select>${r.cands.map((c, j) => `<option value="${j}" ${j === r.pick ? 'selected' : ''}>${esc(candLabel(c))}${this.quickMode === 'wish' ? (store.isWished(keyOf(c)) ? ' ★ already on wishlist' : store.isVisited(keyOf(c)) ? ' ✓ already visited' : '') : store.has(keyOf(c)) ? ' ✓ already logged' : ''}</option>`).join('')}</select>`
         : `<span class="nf">${r.status === 'none' ? 'Couldn’t find this place, so check the spelling' : r.status === 'online' ? 'Not in our list, so searching online…' : 'Searching…'}</span>`}
       <button class="skip" title="${r.on ? 'Skip' : 'Include'}">${r.on ? '✕' : '↺'}</button></div>`).join('');
     $$('#quick-results .qr').forEach(el => {
@@ -816,7 +891,7 @@ export class UI {
     });
     const n = rows.filter(r => r.on && r.cands.length).length;
     $('#quick-foot').hidden = !rows.length;
-    $('#quick-add').textContent = `Add ${n} place${n === 1 ? '' : 's'} to my logbook`;
+    $('#quick-add').textContent = `Add ${n} place${n === 1 ? '' : 's'} to my ${this.quickMode === 'wish' ? 'wishlist' : 'logbook'}`;
     $('#quick-add').disabled = !n;
   }
   async addQuick() {
@@ -825,8 +900,17 @@ export class UI {
     $('#quick-add').textContent = 'Adding…';
     const entries = [];
     for (const c of picks) {
-      try { const info = await this.describe(c.type, c.id, { cid: c.cid }); if (info) entries.push([info.key, info.data, info.parents]); }
+      try { const info = await this.describe(c.type, c.id, { cid: c.cid }); if (info) entries.push(this.quickMode === 'wish' ? ['w:' + info.key, info.data, []] : [info.key, info.data, info.parents]); }
       catch (e) { console.warn(e); }
+    }
+    if (this.quickMode === 'wish') {
+      store.addMany(entries);
+      $('#quick-sheet').hidden = true;
+      this.qrows = []; $('#quick-text').value = ''; this.renderQuick(); $('#quick-status').textContent = '';
+      if (store.settings.showWishlist === false) { store.setSetting('showWishlist', true); $('#toggle-wish').classList.remove('off'); }
+      this.toast(`<b>☆ ${entries.length} place${entries.length === 1 ? '' : 's'} added to your wishlist</b>`, 3500);
+      this.lbMode = 'wish'; this.setTab('logbook');
+      return;
     }
     const added = store.addMany(entries);
     $('#quick-sheet').hidden = true;
@@ -853,7 +937,7 @@ export class UI {
       <span class="pv" style="background:${t.ocean}"><i style="left:14%;top:22%;width:40%;height:44%;background:${t.land};box-shadow:0 0 0 2px ${t.border}"></i><i style="left:52%;top:40%;width:34%;height:40%;background:${store.settings.colors.country};box-shadow:0 0 0 2px ${t.border}"></i></span>${t.label.toUpperCase()}</button>`).join('');
     $$('.theme-card').forEach(b => b.onclick = () => store.setSetting('theme', b.dataset.theme));
     const C = store.settings.colors;
-    $('#color-rows').innerHTML = [['country', 'Countries'], ['state', 'States / regions'], ['city', 'Cities'], ['landmark', 'Wonders']].map(([k, l]) =>
+    $('#color-rows').innerHTML = [['country', 'Countries'], ['state', 'States / regions'], ['city', 'Cities'], ['landmark', 'Wonders'], ['wish', 'Wishlist']].map(([k, l]) =>
       `<label class="color-row"><input type="color" data-c="${k}" value="${C[k]}">${l}</label>`).join('') + `<button class="pix-btn small ghost" id="reset-colors">Reset colours</button>`;
     $$('#color-rows input').forEach(i => i.oninput = () => store.setSetting('colors.' + i.dataset.c, i.value));
     $('#reset-colors').onclick = () => { for (const [k, v] of Object.entries(DEFAULT_SETTINGS.colors)) store.setSetting('colors.' + k, v); };

@@ -36,6 +36,9 @@ landmarks along the way.
     traveller rank.
 - **📍 Locate me / check in.** Finds the nearest town to you, logs it in one tap and
   can save it as your 🏠 home base.
+- **Wishlist:** tap ☆ on any country, state, city or wonder, or switch Quick add to
+  *Wishlist*, to save places you want to go. They show on the map with a light tint and
+  diagonal stripes (⭐ toggles them). Marking one visited ticks it off.
 - **Quick add:** type a whole list like `London, Beijing, Miami, Paris, Texas, Japan, Eiffel Tower`
   and log everything at once. It matches against the app's own 226k places, and anything not
   in there (a tiny village, "Tuscany") is looked up on OpenStreetMap's free Nominatim

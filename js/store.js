@@ -9,7 +9,8 @@ export const DEFAULT_SETTINGS = {
   projection: 'globe',
   autoParents: true,
   showLandmarks: true,
-  colors: { country: '#3b82f6', state: '#22c55e', city: '#facc15', landmark: '#ff8a3d' },
+  showWishlist: true,
+  colors: { country: '#3b82f6', state: '#22c55e', city: '#facc15', landmark: '#ff8a3d', wish: '#e879f9' },
 };
 // colours from the first version; anyone still on them gets the new scheme automatically
 const OLD_DEFAULT_COLORS = { country: '#2ec4b6', state: '#ffb703', city: '#ff4d6d', landmark: '#ffd447' };
@@ -66,6 +67,14 @@ class Store extends EventTarget {
     return false;
   }
   isImpliedOnly(key) { return !this.has(key) && this.isVisited(key); }
+
+  // ---- wishlist: same keys as the logbook, prefixed with "w:" (e.g. "w:c:JP", "w:ci:1850147") ----
+  wishEntries() { return this.entries('w:'); }               // [[innerKey, data]]
+  isWished(key) { return this.has('w:' + key); }
+  toggleWish(key, data = {}) {
+    if (this.isWished(key)) { this.remove('w:' + key); return false; }
+    this.set('w:' + key, data); return true;
+  }
 
   // ---- mutations ----
   set(key, data = {}, { silent } = {}) {

@@ -92,6 +92,7 @@ export class WorldMap extends EventTarget {
     m.addSource('ocean-labels', { type: 'geojson', data: fc(OCEANS.map(([name, x, y]) => pt([x, y], { name }))) });
     m.addSource('cities', { type: 'geojson', data: fc([]) });
     m.addSource('visited-cities', { type: 'geojson', data: fc([]) });
+    m.addSource('wish-cities', { type: 'geojson', data: fc([]) });
     m.addSource('landmarks', { type: 'geojson', data: fc(LANDMARKS.map(l => pt([l.lon, l.lat], { id: l.id, name: l.name, icon: 'lm-' + l.sprite, rank: l.rank, cat: l.cat }))) });
 
     const T = THEMES.midnight;
@@ -117,6 +118,11 @@ export class WorldMap extends EventTarget {
     add({ id: 'states-fill-hd', type: 'fill', source: 'states-hd', filter: NONE, paint: { 'fill-color': '#ffb703', 'fill-opacity': fillOp(0.97, 0.85, 0.55, 0.32) } });
     add({ id: 'states-hover', type: 'fill', source: 'states', filter: NONE, minzoom: 3, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.12 } });
     add({ id: 'states-hover-hd', type: 'fill', source: 'states-hd', filter: NONE, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.12 } });
+    // wishlist: light tint + diagonal stripes + dashed edge, so it never looks like a visited place
+    for (const [id, src] of [['wish-c', 'countries'], ['wish-c-hd', 'states-hd'], ['wish-s', 'states'], ['wish-s-hd', 'states-hd']]) {
+      add({ id: id + '-tint', type: 'fill', source: src, filter: NONE, paint: { 'fill-color': '#e879f9', 'fill-opacity': 0.13 } });
+      add({ id: id + '-hatch', type: 'fill', source: src, filter: NONE, paint: { 'fill-pattern': 'wish-hatch', 'fill-opacity': 0.9 } });
+    }
     add({ id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water', filter: ['!=', ['get', 'brunnel'], 'tunnel'], paint: { 'fill-color': T.ocean } });
     add({ id: 'waterway', type: 'line', source: 'omt', 'source-layer': 'waterway', minzoom: 6, filter: ['!=', ['get', 'brunnel'], 'tunnel'],
       paint: { 'line-color': T.ocean, 'line-width': ['interpolate', ['exponential', 1.4], ['zoom'], 6, ['match', ['get', 'class'], 'river', 0.8, 0.3], 14, ['match', ['get', 'class'], 'river', 5, 1.5]] } });
@@ -189,6 +195,11 @@ export class WorldMap extends EventTarget {
         6, ['case', ['>', ['get', 'area'], 3e6], 20, ['>', ['get', 'area'], 1e5], 16, ['>', ['get', 'area'], 1e4], 12, 9.5]],
       'text-letter-spacing': 0.14, 'text-max-width': 7, 'symbol-sort-key': ['-', 0, ['get', 'area']], 'text-padding': 4 },
       paint: { 'text-color': T.text, 'text-halo-color': T.halo, 'text-halo-width': 1.6 } });
+    add({ id: 'wish-c-line', type: 'line', source: 'countries', filter: NONE, paint: { 'line-color': '#e879f9', 'line-width': 1.6, 'line-dasharray': [2, 2], 'line-opacity': 0.9 } });
+    add({ id: 'wish-s-line', type: 'line', source: 'states', filter: NONE, minzoom: 2, paint: { 'line-color': '#e879f9', 'line-width': 1.2, 'line-dasharray': [2, 2], 'line-opacity': 0.8 } });
+    add({ id: 'landmark-wish', type: 'circle', source: 'landmarks', filter: NONE, minzoom: 3, paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 12, 6, 17, 9, 24], 'circle-color': 'rgba(0,0,0,0)',
+      'circle-stroke-color': '#e879f9', 'circle-stroke-width': 2.5, 'circle-stroke-opacity': 0.95 } });
     add({ id: 'landmark-glow', type: 'circle', source: 'landmarks', filter: ['in', ['get', 'id'], ['literal', []]], minzoom: 3, paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 9, 5, 16, 9, 24], 'circle-color': '#ffd447', 'circle-blur': 0.7, 'circle-opacity': 0.75 } });
     // wonders appear once you zoom in past the whole-globe view
@@ -198,6 +209,10 @@ export class WorldMap extends EventTarget {
       'text-field': ['step', ['zoom'], '', 5.5, ['get', 'name']], 'text-font': ['Noto Sans Medium'], 'text-size': 11,
       'text-anchor': 'top', 'text-offset': [0, 0.2], 'text-optional': true, 'text-max-width': 9 },
       paint: { 'text-color': '#ffe08a', 'text-halo-color': '#1e1830', 'text-halo-width': 1.6 } });
+    add({ id: 'wish-cities', type: 'symbol', source: 'wish-cities', layout: {
+      'icon-image': 'pin-wish', 'icon-anchor': 'bottom', 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 1, 0.5, 6, 0.8, 10, 1],
+      'text-field': ['step', ['zoom'], '', 4, ['get', 'n']], 'text-font': ['Noto Sans Italic'], 'text-size': 11,
+      'text-anchor': 'top', 'text-offset': [0, 0.15], 'text-optional': true }, paint: { 'icon-opacity': 0.85, 'text-color': '#f5d0fe', 'text-halo-color': '#1e1830', 'text-halo-width': 1.4 } });
     add({ id: 'visited-cities', type: 'symbol', source: 'visited-cities', layout: {
       'icon-image': 'pin-city', 'icon-anchor': 'bottom', 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 1, 0.55, 6, 0.85, 10, 1.1],
       'text-field': ['step', ['zoom'], '', 3.5, ['get', 'n']], 'text-font': ['Noto Sans Medium'], 'text-size': 12,
@@ -218,7 +233,15 @@ export class WorldMap extends EventTarget {
     if (this.map.hasImage(name)) this.map.updateImage(name, img);
     else this.map.addImage(name, img, { pixelRatio: 2 });
   }
-  _makePins() { this._addCanvasImage('pin-city', renderIcon('pin', store.settings.colors.city, 4)); }
+  _makePins() {
+    this._addCanvasImage('pin-city', renderIcon('pin', store.settings.colors.city, 4));
+    this._addCanvasImage('pin-wish', renderIcon('pin', store.settings.colors.wish, 4));
+    // seamless diagonal stripes for wishlist areas
+    const c = document.createElement('canvas'); c.width = c.height = 24;
+    const x = c.getContext('2d'); x.fillStyle = store.settings.colors.wish;
+    for (let i = 0; i < 24; i++) for (let j = 0; j < 24; j++) if ((i + j) % 12 < 3) x.fillRect(i, j, 1, 1);
+    this._addCanvasImage('wish-hatch', c);
+  }
 
   // ---------- theme / visited paint ----------
   applyTheme() {
@@ -270,6 +293,28 @@ export class WorldMap extends EventTarget {
     for (const l of ['countries-visited', 'countries-visited-hd']) m.setPaintProperty(l, 'fill-color', fill);
     for (const l of ['states-fill', 'states-fill-hd']) m.setPaintProperty(l, 'fill-color', C.state);
     m.setFilter('landmark-glow', ['in', ['get', 'id'], ['literal', vl]]);
+    // wishlist (hidden while comparing with a friend, or when switched off); places already visited drop off
+    const wishOn = store.settings.showWishlist !== false && !this.compare;
+    const W = wishOn ? store.wishEntries() : [];
+    const vcSet = new Set(vc), vsSet = new Set(vs);
+    const wc = W.filter(([k]) => k.startsWith('c:')).map(([k]) => k.slice(2)).filter(c => !vcSet.has(c));
+    const ws = W.filter(([k]) => k.startsWith('s:')).map(([k]) => k.slice(2)).filter(s => !vsSet.has(s));
+    const wl = W.filter(([k]) => k.startsWith('l:')).map(([k]) => k.slice(2)).filter(l => !store.has('l:' + l));
+    const wci = W.filter(([k]) => k.startsWith('ci:') && !store.has(k));
+    const hdIds = [...this.hd.keys()];
+    for (const part of ['-tint', '-hatch']) {
+      m.setFilter('wish-c' + part, ['all', ['in', ['get', 'id'], ['literal', wc]], ['!', ['in', ['get', 'id'], ['literal', hdIds]]]]);
+      m.setFilter('wish-c-hd' + part, ['in', ['get', 'cid'], ['literal', wc]]);
+      m.setFilter('wish-s' + part, ['all', ['in', ['get', 'id'], ['literal', ws]], ['!', ['in', ['get', 'cid'], ['literal', hdIds]]]]);
+      m.setFilter('wish-s-hd' + part, ['in', ['get', 'id'], ['literal', ws]]);
+    }
+    for (const l of ['wish-c-tint', 'wish-c-hd-tint', 'wish-s-tint', 'wish-s-hd-tint']) m.setPaintProperty(l, 'fill-color', C.wish);
+    m.setFilter('wish-c-line', ['in', ['get', 'id'], ['literal', wc]]);
+    m.setFilter('wish-s-line', ['in', ['get', 'id'], ['literal', ws]]);
+    for (const l of ['wish-c-line', 'wish-s-line']) m.setPaintProperty(l, 'line-color', C.wish);
+    m.setFilter('landmark-wish', ['in', ['get', 'id'], ['literal', wl]]);
+    m.setPaintProperty('landmark-wish', 'circle-stroke-color', C.wish);
+    m.getSource('wish-cities').setData(fc(wci.filter(([, c]) => c.lat != null).map(([k, c]) => pt([c.lon, c.lat], { id: +k.slice(3), n: c.n, cid: c.c }))));
     m.setPaintProperty('landmark-glow', 'circle-color', C.landmark);
     m.setPaintProperty('landmarks', 'icon-opacity', ['case', ['in', ['get', 'id'], ['literal', vl]], 1, 0.82]);
     m.getSource('visited-cities').setData(fc(store.cities().map(([id, c]) => pt([c.lon, c.lat], { id: +id, n: c.n, cid: c.c }))));

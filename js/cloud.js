@@ -60,11 +60,22 @@ export async function signIn() {
   provider.setCustomParameters({ prompt: 'select_account' });
   try { await A.signInWithPopup(auth, provider); }
   catch (e) {
+    const cancelled = /popup-closed-by-user|cancelled-popup-request|user-cancelled/.test(e?.code || '');
+    if (EMBEDDED && !cancelled) {
+      // Inside another site (e.g. ascoding): some browsers (Safari) block sign-in in embedded pages, and
+      // Google refuses to load inside a frame, so open the full site in a new tab instead of redirecting.
+      window.open(FULL_SITE, '_blank', 'noopener');
+      const err = new Error('Sign-in opened in a new tab'); err.code = 'embed/opened-full-site'; throw err;
+    }
     if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/operation-not-supported-in-this-environment') {
       await A.signInWithRedirect(auth, provider);
     } else throw e;
   }
 }
+
+/** True when the app is shown inside another site's page (an iframe), e.g. on ascoding. */
+export const EMBEDDED = (() => { try { return window.self !== window.top; } catch { return true; } })();
+export const FULL_SITE = location.origin + location.pathname.replace(/index\.html$/, '');
 
 export async function signOutUser() {
   if (!fb) return;

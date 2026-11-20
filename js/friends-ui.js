@@ -51,7 +51,13 @@ export class FriendsUI {
       ${this.prefill ? `<p class="muted">You were invited to add <b>@${esc(this.prefill)}</b>. Sign in first.</p>` : ''}
       <button class="gbtn" id="f-signin">Sign in with Google</button>
       <p class="muted" style="margin-top:14px">Your friends only see your username, your stats and the places you've been, never your notes, dates or home base.</p>`;
-    $('#f-signin').onclick = async () => { try { await signIn(); } catch (e) { if (!/popup-closed|cancelled/.test(e?.code || '')) this.ui.toast('Sign-in failed: ' + esc(e?.code || e?.message)); } };
+    $('#f-signin').onclick = async () => {
+      try { await signIn(); }
+      catch (e) {
+        if (e?.code === 'embed/opened-full-site') this.ui.toast('This browser blocks Google sign-in inside other websites, so the full site opened in a new tab. Sign in there.', 7000);
+        else if (!/popup-closed|cancelled/.test(e?.code || '')) this.ui.toast('Sign-in failed: ' + esc(e?.code || e?.message));
+      }
+    };
   }
 
   renderClaim(body, changing) {

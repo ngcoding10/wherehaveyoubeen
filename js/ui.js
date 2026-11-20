@@ -4,7 +4,7 @@ import { loadStates, DATA, UN195, country, stateMeta, loadCountryCities, loadCit
 import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
-import { cloud, signIn, signOutUser } from './cloud.js';
+import { cloud, signIn, signOutUser, EMBEDDED } from './cloud.js';
 import { computeStats, CONTINENTS } from './stats.js';
 import { FriendsUI } from './friends-ui.js';
 import { social } from './social.js';
@@ -31,6 +31,7 @@ export class UI {
   }
 
   start() {
+    if (EMBEDDED) document.body.classList.add('embedded');
     this.applyCSSColors();
     this.drawChrome();
     this.wireTop();
@@ -972,7 +973,10 @@ export class UI {
         ${cloud.status === 'error' ? `<p class="muted" style="color:var(--c-city)">Sign-in problem: ${esc(cloud.lastError || 'could not reach Google')}</p>` : ''}`;
       $('#g-signin').onclick = async () => {
         try { await signIn(); $('#account-sheet').hidden = true; this.toast('Signed in — syncing your logbook ☁️'); }
-        catch (e) { if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') { cloud.lastError = e?.message; this.toast('Sign-in failed: ' + esc(e?.code || e?.message || 'unknown')); } }
+        catch (e) {
+          if (e?.code === 'embed/opened-full-site') { this.closeSheet($('#account-sheet')); this.toast('This browser blocks Google sign-in inside other websites, so the full site opened in a new tab. Sign in there, with the same account everywhere.', 7000); }
+          else if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') { cloud.lastError = e?.message; this.toast('Sign-in failed: ' + esc(e?.code || e?.message || 'unknown')); }
+        }
       };
     } else {
       const st = { synced: 'All changes saved to your account', saving: 'Saving…', connecting: 'Connecting…', error: 'Sync problem', local: '' }[cloud.status] || '';

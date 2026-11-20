@@ -38,8 +38,6 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <main id="map" class="is-globe" aria-label="Interactive world map"></main>
-  <noscript><p style="padding:40px;color:#fff;font-family:sans-serif">This interactive map needs JavaScript turned on.</p></noscript>
   <div id="stars" aria-hidden="true"></div>
 
   <!-- top bar -->
@@ -60,11 +58,11 @@
 
     <div class="top-actions">
       <div class="seg" id="proj-toggle" role="group" aria-label="Map mode">
-        <button data-proj="globe" title="Globe mode">🌍 Globe</button>
-        <button data-proj="mercator" title="Flat map mode">🗺️ Map</button>
+        <button data-proj="globe" title="Globe mode"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg> Globe</button>
+        <button data-proj="mercator" title="Flat map mode"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg> Map</button>
       </div>
-      <button class="quick-btn" id="quick-btn" title="Add lots of places at once"><span>＋</span> Quick add</button>
-      <button class="icon-btn" id="theme-btn" title="Theme & colours" aria-label="Theme and colours">🎨</button>
+      <button class="quick-btn" id="quick-btn" title="Add lots of places at once"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 5v14M5 12h14"/></svg> Quick add</button>
+      <button class="icon-btn" id="theme-btn" title="Theme & colours" aria-label="Settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 6h16M4 12h16M4 18h16"/><rect x="7" y="4" width="3" height="4" fill="currentColor"/><rect x="14" y="10" width="3" height="4" fill="currentColor"/><rect x="9" y="16" width="3" height="4" fill="currentColor"/></svg></button>
       <button class="account-btn" id="account-btn"><span class="acct-avatar" id="acct-avatar">G</span><span id="acct-label">Sign in</span></button>
     </div>
   </header>
@@ -77,18 +75,18 @@
 
   <!-- map controls -->
   <div class="map-ctrls">
-    <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-    <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-    <button id="proj-btn" class="phone-only" title="Switch globe / flat map" aria-label="Switch between globe and flat map">🗺️</button>
-    <button id="theme-btn-m" class="phone-only" title="Settings" aria-label="Settings and colours">🎨</button>
-    <button id="toggle-lm" title="Show / hide wonders" aria-label="Show or hide wonders" aria-pressed="true">🏛️</button>
-    <button id="toggle-wish" title="Show / hide wishlist" aria-label="Show or hide your wishlist" aria-pressed="true">⭐</button>
-    <button id="locate" title="Find me & check in" aria-label="Find my location">📍</button>
-    <button id="go-home" title="Go to my home base" aria-label="Go to home">🏠</button>
-    <button id="reset-view" title="Whole world" aria-label="Show the whole world">🌐</button>
+    <button id="zoom-in" title="Zoom in" aria-label="Zoom in"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button id="zoom-out" title="Zoom out" aria-label="Zoom out"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M5 12h14"/></svg></button>
+    <button id="proj-btn" class="phone-only" title="Switch globe / flat map" aria-label="Switch between globe and flat map"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg></button>
+    <button id="theme-btn-m" class="phone-only" title="Settings" aria-label="Settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 6h16M4 12h16M4 18h16"/><rect x="7" y="4" width="3" height="4" fill="currentColor"/><rect x="14" y="10" width="3" height="4" fill="currentColor"/><rect x="9" y="16" width="3" height="4" fill="currentColor"/></svg></button>
+    <button id="toggle-lm" title="Show / hide wonders" aria-label="Show or hide wonders" aria-pressed="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 21h18M5 18v-8M10 18v-8M14 18v-8M19 18v-8M3 10l9-6 9 6z"/></svg></button>
+    <button id="toggle-wish" title="Show / hide wishlist" aria-label="Show or hide your wishlist" aria-pressed="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1L3.2 9.4l6.1-.8z"/></svg></button>
+    <button id="locate" title="Find me & check in" aria-label="Find my location"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><rect x="11" y="11" width="2" height="2" fill="currentColor"/></svg></button>
+    <button id="go-home" title="Go to my home base" aria-label="Go to home"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 11l9-8 9 8"/><path d="M5 9v12h14V9"/><path d="M10 21v-6h4v6"/></svg></button>
+    <button id="reset-view" title="Whole world" aria-label="Show the whole world"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg></button>
   </div>
 
-  <button class="fab phone-only" id="quick-fab" aria-label="Quick add places"><span>＋</span> Add places</button>
+  <button class="fab phone-only" id="quick-fab" aria-label="Quick add places"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 5v14M5 12h14"/></svg> Add places</button>
 
   <div class="compare-bar" id="compare-bar" role="status" hidden></div>
 
@@ -101,12 +99,12 @@
       <button class="panel-grip" id="panel-grip" aria-label="Expand or collapse panel"><span></span></button>
       <div class="sheet-peek phone-only" id="sheet-peek"></div>
       <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="explore" class="active"><i aria-hidden="true">🧭</i><span>Explore</span></button>
-        <button role="tab" data-tab="logbook"><i aria-hidden="true">📖</i><span>Logbook</span></button>
-        <button role="tab" data-tab="passport"><i aria-hidden="true">🛂</i><span>Passport</span></button>
-        <button role="tab" data-tab="landmarks"><i aria-hidden="true">🏛️</i><span>Wonders</span></button>
-        <button role="tab" data-tab="stats"><i aria-hidden="true">📊</i><span>Stats</span></button>
-        <button role="tab" data-tab="friends"><i aria-hidden="true">👥</i><span>Friends</span></button>
+        <button role="tab" data-tab="explore" class="active"><i aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor"/></svg></i><span>Explore</span></button>
+        <button role="tab" data-tab="logbook"><i aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M5 3h12a2 2 0 0 1 2 2v16H7a2 2 0 0 1-2-2z"/><path d="M5 17a2 2 0 0 1 2-2h12"/><path d="M9 7h6"/></svg></i><span>Logbook</span></button>
+        <button role="tab" data-tab="passport"><i aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><rect x="5" y="2" width="14" height="20"/><circle cx="12" cy="10" r="3"/><path d="M9 17h6"/></svg></i><span>Passport</span></button>
+        <button role="tab" data-tab="landmarks"><i aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 21h18M5 18v-8M10 18v-8M14 18v-8M19 18v-8M3 10l9-6 9 6z"/></svg></i><span>Wonders</span></button>
+        <button role="tab" data-tab="stats"><i aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 21h18"/><path d="M6 17v-6M12 17V5M18 17v-9" stroke-width="3"/></svg></i><span>Stats</span></button>
+        <button role="tab" data-tab="friends"><i aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14a5 5 0 0 1 5 5"/></svg></i><span>Friends</span></button>
       </nav>
     </div>
     <div class="panel-body" id="panel-body">
@@ -116,6 +114,9 @@
       <p class="muted">Loading the world…</p>
     </div>
   </aside>
+
+  <main id="map" class="is-globe" aria-label="Interactive world map"></main>
+  <noscript><p style="padding:40px;color:#fff;font-family:sans-serif">This interactive map needs JavaScript turned on.</p></noscript>
 
   <!-- theme sheet -->
   <div class="sheet" id="theme-sheet" role="dialog" aria-modal="true" aria-label="Settings" hidden>

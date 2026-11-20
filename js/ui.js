@@ -8,6 +8,7 @@ import { cloud, signIn, signOutUser } from './cloud.js';
 import { computeStats, CONTINENTS } from './stats.js';
 import { FriendsUI } from './friends-ui.js';
 import { social } from './social.js';
+import { ICON } from './icons.js';
 import { parse as parseQuick, resolveLocal, resolveOnline, candLabel } from './quickadd.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -67,7 +68,7 @@ export class UI {
     $('meta[name=theme-color]').content = (THEMES[store.settings.theme] || THEMES.midnight).ocean;
     $$('#proj-toggle button').forEach(b => b.classList.toggle('active', b.dataset.proj === store.settings.projection));
     const pb = $('#proj-btn');
-    if (pb) { const globe = store.settings.projection !== 'mercator'; pb.textContent = globe ? '🗺️' : '🌍'; pb.title = pb.ariaLabel = globe ? 'Switch to flat map' : 'Switch to globe'; }
+    if (pb) { const globe = store.settings.projection !== 'mercator'; pb.innerHTML = globe ? ICON.map : ICON.globe; pb.title = pb.ariaLabel = globe ? 'Switch to flat map' : 'Switch to globe'; }
   }
 
   toast(html, ms = 2600) {
@@ -198,6 +199,7 @@ export class UI {
     p.classList.toggle('half', state === 'half');
     p.classList.toggle('full', state === 'full');
     document.body.classList.toggle('sheet-full', state === 'full');
+    document.body.classList.toggle('sheet-half', state === 'half');
     $('#panel-grip').setAttribute('aria-label', state === 'full' ? 'Collapse panel' : 'Expand panel');
     if (!this.isPhone()) return;
     const h = Math.round(this.sheetHeight(state === 'full' ? 'half' : state));
@@ -530,7 +532,7 @@ export class UI {
         <button class="lm-chip" data-id="${spot.id}" style="width:100%;padding:10px"><canvas data-sprite="${spot.sprite}" style="width:72px;height:72px"></canvas>
         <span><b>${esc(spot.name)}</b><br><span class="muted">${esc(spot.blurb)}</span></span></button></div>
       ${recent.length ? `<div class="p-sec"><h3>RECENTLY LOGGED</h3>${recent.map(([k, v]) => this.recentTag(k, v)).join('')}</div>` : ''}
-      <div class="p-sec"><h3>TIPS</h3><p class="muted">• Switch between 🌍 Globe and 🗺️ flat Map at the top.<br>• Change colours & map style with 🎨.<br>• Sign in with Google to save your logbook to the cloud and use it on any device.</p></div>`;
+      <div class="p-sec"><h3>TIPS</h3><p class="muted">• Switch between the globe and a flat map with the globe/map button.<br>• Tap ☆ on any place to add it to your wishlist.<br>• Sign in with Google to sync your logbook across devices and compete with friends.</p></div>`;
     $('#w-locate').onclick = () => this.locate();
     $('#w-quick').onclick = () => this.openQuick();
     $('#w-search').onclick = () => $('#search').focus();

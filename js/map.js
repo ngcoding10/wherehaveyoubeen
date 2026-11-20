@@ -100,7 +100,7 @@ export class WorldMap extends EventTarget {
     // Latin-script names only: readable for most visitors, and matches the bundled font ranges
     const NAME = ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ''];
     const NONE = ['==', ['get', 'id'], ''];
-    const fillOp = (a, b, c, d) => ['interpolate', ['linear'], ['zoom'], 3, a, 7, b, 11, c, 15, d];
+    const fillOp = (a, b, c, d) => ['interpolate', ['linear'], ['zoom'], 3, a, 6, b, 10, c, 15, d];
     // land is the background; real OSM water is drawn on top of the visited colours, so coastlines are exact
     add({ id: 'landcover', type: 'fill', source: 'omt', 'source-layer': 'landcover', filter: ['in', ['get', 'class'], ['literal', ['wood', 'forest', 'ice', 'glacier', 'sand', 'wetland', 'grass', 'rock']]],
       paint: { 'fill-color': ['match', ['get', 'class'], ['ice', 'glacier'], '#e9f1f7', 'sand', '#d9c9a0', 'rock', '#9a9aa2', T.wood],
@@ -112,9 +112,9 @@ export class WorldMap extends EventTarget {
     m.moveLayer('countries-fill', 'landcover');
     add({ id: 'states-hit', type: 'fill', source: 'states', paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
     add({ id: 'states-hit-hd', type: 'fill', source: 'states-hd', paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
-    add({ id: 'countries-visited', type: 'fill', source: 'countries', filter: NONE, paint: { 'fill-color': '#2ec4b6', 'fill-opacity': fillOp(0.95, 0.75, 0.45, 0.28) } });
+    add({ id: 'countries-visited', type: 'fill', source: 'countries', filter: NONE, paint: { 'fill-color': '#2ec4b6', 'fill-opacity': fillOp(0.92, 0.6, 0.38, 0.25) } });
     add({ id: 'countries-visited-hd', type: 'fill', source: 'states-hd', filter: NONE, paint: { 'fill-color': '#2ec4b6', 'fill-antialias': false, 'fill-opacity': fillOp(0.95, 0.75, 0.45, 0.28) } });
-    add({ id: 'states-fill', type: 'fill', source: 'states', filter: NONE, paint: { 'fill-color': '#ffb703', 'fill-opacity': fillOp(0.97, 0.85, 0.55, 0.32) } });
+    add({ id: 'states-fill', type: 'fill', source: 'states', filter: NONE, paint: { 'fill-color': '#ffb703', 'fill-opacity': fillOp(0.95, 0.72, 0.48, 0.3) } });
     add({ id: 'states-fill-hd', type: 'fill', source: 'states-hd', filter: NONE, paint: { 'fill-color': '#ffb703', 'fill-opacity': fillOp(0.97, 0.85, 0.55, 0.32) } });
     add({ id: 'states-hover', type: 'fill', source: 'states', filter: NONE, minzoom: 3, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.12 } });
     add({ id: 'states-hover-hd', type: 'fill', source: 'states-hd', filter: NONE, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.12 } });

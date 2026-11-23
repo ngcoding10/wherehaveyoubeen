@@ -48,7 +48,7 @@ async function adminSet(path, fields) {
 // Helpers that run inside the page. The app's own modules are imported by the same URL, so these are the live instances.
 const inPage = {
   state: () => Promise.all([import('/js/cloud.js'), import('/js/social.js'), import('/js/store.js')]).then(([c, s, st]) => ({
-    ready: c.cloud.ready, user: c.cloud.user, status: c.cloud.status, lastError: c.cloud.lastError,
+    ready: c.cloud.ready, user: c.cloud.user, status: c.cloud.status, off: c.cloud.off, lastError: c.cloud.lastError,
     social: s.social.state, me: s.social.me, friends: [...s.social.friends.values()].map(f => f.username), incoming: s.social.incoming.length,
     places: Object.keys(st.store.book.items),
   })),
@@ -218,6 +218,11 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     await waitState(C.page, s => s.social === 'need-username');
     await C.page.evaluate(n => import('/js/cloud.js').then(m => m.getCore().account.claim(n)), nameC); // what another app does
     check('setup: C has an account username but no whyb profile', (await doc(`accounts/${uidC}`))?.username === nameC && (await doc(`whyb_profiles/${uidC}`)) === null);
+    await friendsTab(A.page);
+    await A.page.fill('#f-add', nameC);
+    await A.page.click('#f-send');
+    const notHere = await until(async () => { const m = await A.page.textContent('#f-msg'); return m || null; });
+    check('a request to someone with a username but no profile here gives a clear message', /isn’t on Where Have You Been yet\. Send them your invite link\./.test(notHere || '') && (await doc(`whyb_requests/${uidC}_${uidA}`)) === null, String(notHere));
     await C.page.reload();
     await C.page.waitForSelector('#boot.done', { timeout: 60000 });
     const cReady = await waitState(C.page, s => s.social === 'ready' || s.social === 'need-username' || s.social === 'error');
@@ -227,6 +232,14 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     // C uses no other app: everything goes, including the account, the username and the sign-in
     await C.page.evaluate(() => import('/js/store.js').then(({ store }) => { store.set('c:NZ'); }));
     await until(async () => /"c:NZ"/.test((await doc(`whyb_users/${uidC}`))?.book || ''));
+    await friendsTab(C.page);
+    await C.page.fill('#f-add', nameA2);
+    await C.page.click('#f-send');
+    await friendsTab(A.page);
+    await A.page.waitForSelector('[data-accept]', { timeout: 15000 });
+    await A.page.click('[data-accept]');
+    const acFriends = await until(async () => (await board(A.page)).some(t => t.includes(nameC)) && (await board(C.page)).some(t => t.includes(nameA2)), 20000);
+    check('setup: A and C are friends before C deletes', !!acFriends && ((await doc(`whyb_profiles/${uidA}`)).friends || []).includes(uidC));
     await C.page.click('#account-btn');
     await C.page.click('#g-delete');
     check('delete asks for confirmation first', await C.page.isVisible('#g-delete-yes') && (await doc(`whyb_users/${uidC}`)) !== null);
@@ -237,6 +250,8 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
       !!cOut && (await doc(`whyb_users/${uidC}`)) === null && (await doc(`whyb_profiles/${uidC}`)) === null && (await doc(`accounts/${uidC}`)) === null && (await doc(`usernames/${nameC}`)) === null,
       JSON.stringify({ signedOut: !!cOut, users: await doc(`whyb_users/${uidC}`), profile: await doc(`whyb_profiles/${uidC}`), account: await doc(`accounts/${uidC}`) }));
     check('the logbook in the browser stays after deleting', cOut && cOut.places.includes('c:NZ'));
+    const aAfter = await until(async () => !((await doc(`whyb_profiles/${uidA}`)).friends || []).includes(uidC) && (await board(A.page)).length === 1);
+    check('deleting while still friends: the friend\'s list and leaderboard no longer have that person', !!aAfter, `friends=${JSON.stringify((await doc(`whyb_profiles/${uidA}`)).friends)} board=${await board(A.page)}`);
 
     // B also uses another app (a pantry document): only the whyb data goes
     await adminSet(`pantry_users/${uidB}`, { pantry: { arrayValue: { values: [{ stringValue: 'rice' }] } } });
@@ -247,12 +262,27 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     await B.page.click('#account-btn');
     await B.page.click('#g-delete');
     await B.page.click('#g-delete-yes');
-    const bOut = await waitState(B.page, s => !s.user, 30000);
-    await sleep(4000);
-    check('delete-my-data (other app in use): whyb data and requests go, account and username stay',
-      !!bOut && (await doc(`whyb_users/${uidB}`)) === null && (await doc(`whyb_profiles/${uidB}`)) === null && (await doc(`whyb_requests/${uidA}_${uidB}`)) === null
+    const bOff = await waitState(B.page, s => s.off && s.status === 'off', 30000);
+    await B.page.evaluate(() => import('/js/store.js').then(({ store }) => { store.set('c:PE'); })); // a change that would normally be uploaded
+    await sleep(4000); // long enough for any stray save or publish to have re-created something
+    const bGone = async () => (await doc(`whyb_users/${uidB}`)) === null && (await doc(`whyb_profiles/${uidB}`)) === null;
+    check('delete-my-data (other app in use): whyb data and requests go, account and username stay, still signed in with sync off',
+      !!bOff && !!bOff.user && bOff.social === 'off' && (await bGone()) && (await doc(`whyb_requests/${uidA}_${uidB}`)) === null
       && (await doc(`accounts/${uidB}`))?.username === nameB && (await doc(`usernames/${nameB}`))?.uid === uidB && (await doc(`pantry_users/${uidB}`)) !== null,
-      JSON.stringify({ signedOut: !!bOut, users: await doc(`whyb_users/${uidB}`), profile: await doc(`whyb_profiles/${uidB}`), account: await doc(`accounts/${uidB}`) }));
+      JSON.stringify({ state: bOff && { user: !!bOff.user, off: bOff.off, social: bOff.social }, users: await doc(`whyb_users/${uidB}`), profile: await doc(`whyb_profiles/${uidB}`), account: await doc(`accounts/${uidB}`) }));
+    check('the account sheet says the data is deleted and offers to turn sync back on', /CLOUD SYNC IS OFF/.test(await B.page.textContent('#account-card')) && await B.page.isVisible('#g-resume'));
+    await B.page.reload();
+    await B.page.waitForSelector('#boot.done', { timeout: 60000 });
+    const bReload = await waitState(B.page, s => s.user && s.status !== 'local' && s.social !== 'loading' && s.social !== 'signed-out');
+    await sleep(4000);
+    check('after a reload sync is still off and nothing was uploaded again', bReload?.off && bReload.social === 'off' && bReload.places.includes('c:PE') && (await bGone()), JSON.stringify(bReload && { off: bReload.off, status: bReload.status, social: bReload.social }));
+    await B.page.click('.tabs [data-tab=friends]');
+    check('friends tab explains and offers to turn sync back on', await B.page.isVisible('#f-resume'));
+    await B.page.click('#account-btn');
+    await B.page.click('#g-resume');
+    const bOn = await waitState(B.page, s => !s.off && s.status === 'synced' && s.social === 'ready');
+    check('"Turn sync back on" uploads the logbook again and restores the profile with the same username', !!bOn && /"c:PE"/.test((await doc(`whyb_users/${uidB}`))?.book || '') && (await doc(`whyb_profiles/${uidB}`))?.username === nameB, JSON.stringify(bOn && { status: bOn.status, social: bOn.social }));
+    await B.page.click('#account-card [data-close]').catch(() => {});
 
     // sign out keeps the cloud copy
     await A.page.click('#account-btn');
@@ -261,8 +291,36 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
 
     const keys = await A.page.evaluate(() => ({ localStorage: Object.keys(localStorage), sessionStorage: Object.keys(sessionStorage) }));
     console.log('\nBrowser storage keys (person A, emulator mode):', JSON.stringify(keys));
-    const own = [...keys.localStorage, ...keys.sessionStorage].filter(k => !k.startsWith('firebase:'));
+    const keysB = await B.page.evaluate(() => ({ localStorage: Object.keys(localStorage), sessionStorage: Object.keys(sessionStorage) }));
+    console.log('Browser storage keys (person B, sync switched off earlier):', JSON.stringify(keysB));
+    const own = [...keys.localStorage, ...keys.sessionStorage, ...keysB.localStorage].filter(k => !k.startsWith('firebase:'));
     check('the app\'s own storage keys all start with whyb.', own.every(k => k.startsWith('whyb.')), own.join(', '));
+
+    // ───── embedded in another site's page: a failed sign-in opens the full site in a new tab ─────
+    {
+      const http = require('http');
+      const host = http.createServer((q, r) => { r.setHeader('Content-Type', 'text/html'); r.end(`<!doctype html><title>host</title><iframe src="${BASE}/?emulator" style="width:1200px;height:800px"></iframe>`); });
+      await new Promise(r => host.listen(0, 'localhost', r));
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(`http://localhost:${host.address().port}/`);
+      const frame = await until(() => page.frames().find(f => f.url().startsWith(BASE)), 20000);
+      await frame.waitForSelector('#boot.done', { timeout: 60000 });
+      await frame.click('#account-btn');
+      await until(() => frame.$eval('#g-signin', b => !b.disabled), 60000);
+      const emb = await frame.evaluate(() => import('/js/cloud.js').then(m => ({ core: m.getCore().embedded, app: m.EMBEDDED, full: m.FULL_SITE })));
+      check('embedded: core.embedded is true inside a frame', emb.core === true && emb.app === true);
+      // make the sign-in window fail to open (as a browser that blocks it would) and record what the app opens instead
+      await frame.evaluate(() => { window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; }; });
+      await frame.click('#g-signin');
+      const opened = await until(() => frame.evaluate(() => window.__opened.length >= 2 ? window.__opened : null), 15000);
+      const all = opened || await frame.evaluate(() => window.__opened);
+      console.log('   embedded: window.open calls:', JSON.stringify(all.map(a => [String(a[0]).slice(0, 70), a[1]])));
+      check('embedded: a failed sign-in opens the full site in a new tab', !!opened && opened[opened.length - 1][0] === emb.full && opened[opened.length - 1][1] === '_blank', JSON.stringify(all.map(a => String(a[0]).slice(0, 60))));
+      check('embedded: the person is told the full site opened', !!(await until(async () => /full site opened in a new tab/.test(await frame.textContent('body')))));
+      await context.close();
+      host.close();
+    }
 
     const noise = /Failed to load resource|ERR_|net::|WebGL|maplibre|tile|font|glyph|sprite/i;
     for (const [who, log] of [['A', logA], ['B', logB], ['C', logC]]) {

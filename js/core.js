@@ -4,7 +4,7 @@
 // It gives an app: sign-in (Google, and email + password), the shared account (one username
 // per person across all apps), Firestore, Cloud Function calls, and App Check (bot protection).
 // The Firebase SDK is passed in, so the same file works with the npm package and with the CDN.
-export const CORE_VERSION = '1.0.0';
+export const CORE_VERSION = '1.1.0';
 export const FIREBASE_SDK_VERSION = '13.4.0'; // every app pins exactly this version
 export const REGION = 'us-central1';
 export const USERNAME_RE = /^[a-z0-9_.]{3,20}$/;
@@ -68,6 +68,7 @@ export function createCore({ appName, sdk, config, appCheckSiteKey = null, emula
   const A = sdk.auth, F = sdk.firestore, FN = sdk.functions;
   if (!config && !emulator) throw new Error('Firebase is not configured');
   const browser = typeof window !== 'undefined';
+  const embedded = browser && (() => { try { return window.self !== window.top; } catch { return true; } })();
   // One Firebase app per page, shared session across the apps on the same site.
   const fbApp = sdk.app.initializeApp(emulator ? EMULATOR_CONFIG : config);
 
@@ -109,7 +110,7 @@ export function createCore({ appName, sdk, config, appCheckSiteKey = null, emula
   const provider = () => { const p = new A.GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' }); return p; };
 
   const core = {
-    appName, emulator, app: fbApp, auth, db, functions, F, A,
+    appName, emulator, embedded, app: fbApp, auth, db, functions, F, A,
     /** Resolves with the signed-in person (or null) once Firebase knows. */
     ready,
     get user() { return current; },
@@ -123,7 +124,8 @@ export function createCore({ appName, sdk, config, appCheckSiteKey = null, emula
     signInWithGoogle() {
       return A.signInWithPopup(auth, provider()).then((c) => toUser(c.user), async (e) => {
         if (['auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/user-cancelled'].includes(e?.code)) return null;
-        if (e?.code === 'auth/operation-not-supported-in-this-environment') { await A.signInWithRedirect(auth, provider()); return null; }
+        // Inside another site's frame (an embed) a redirect cannot work: let the app open the full site instead.
+        if (e?.code === 'auth/operation-not-supported-in-this-environment' && !embedded) { await A.signInWithRedirect(auth, provider()); return null; }
         throw authError(e);
       });
     },
@@ -226,10 +228,11 @@ export function createCore({ appName, sdk, config, appCheckSiteKey = null, emula
         return (await FN.httpsCallable(functions, name, { timeout })(data)).data;
       } catch (e) {
         const code = String(e?.code ?? '').replace(/^functions\//, '');
-        const msg = code === 'unauthenticated' ? (e?.message || 'Sign in first.')
+        const said = String(e?.message ?? '').replace(/\s*\[\d{3}\]$/, ''); // the SDK appends the HTTP status
+        const msg = code === 'unauthenticated' ? (said || 'Sign in first.')
           : code === 'not-found' ? 'This feature is not switched on yet.'
           : code === 'deadline-exceeded' ? 'That took too long. Try again.'
-          : (e?.message && code !== 'internal' ? e.message : 'Something went wrong. Try again.');
+          : (said && code !== 'internal' ? said : 'Something went wrong. Try again.');
         const err = new Error(msg); err.code = code || 'unknown';
         throw err;
       }

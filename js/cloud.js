@@ -16,7 +16,8 @@ cloud.enabled = !!firebaseConfig || emulator;
 cloud.ready = false;    // true once the core is loaded: only then can the sign-in button work
 cloud.failed = false;   // the Firebase SDK could not be loaded
 cloud.user = null;
-cloud.status = 'local'; // local | connecting | synced | saving | error
+cloud.status = 'local'; // local | connecting | synced | saving | error | off
+cloud.off = false;      // signed in, but cloud sync is switched off (after "delete my data") until they turn it back on
 cloud.lastError = '';
 
 let core = null, loading = null, unsubDoc = null, saveTimer = null, applyingRemote = false, paused = false, pushing = null;
@@ -26,6 +27,12 @@ function setStatus(s, msg = '') {
   cloud.dispatchEvent(new CustomEvent('status', { detail: { status: s, msg } }));
 }
 const fire = name => cloud.dispatchEvent(new CustomEvent(name));
+
+// After deleting their cloud data a person can stay signed in (another app uses the same sign-in). Sync then
+// stays off for them, also after a reload, so nothing is uploaded again until they ask for it.
+const LS_SYNC_OFF = 'whyb.syncOff';
+const syncOffFor = uid => { try { return localStorage.getItem(LS_SYNC_OFF) === uid; } catch { return false; } };
+function setSyncOff(uid) { try { if (uid) localStorage.setItem(LS_SYNC_OFF, uid); else localStorage.removeItem(LS_SYNC_OFF); } catch { /* private mode */ } }
 
 /** The shared core ({ db, F, A, account, … }), or null until initCloud() has finished loading it. */
 export const getCore = () => core;
@@ -62,8 +69,9 @@ export const FULL_SITE = location.origin + location.pathname.replace(/index\.htm
  */
 export function signIn() {
   if (!core) { const e = new Error('Sign-in is still loading. Try again in a moment.'); e.code = 'not-ready'; return Promise.reject(e); }
+  setSyncOff(null); // signing in is asking for sync
   return core.signInWithGoogle().catch(e => {
-    if (EMBEDDED) {
+    if (core.embedded ?? EMBEDDED) {
       // Inside another site (e.g. ascoding): some browsers (Safari) block sign-in in embedded pages, and
       // Google refuses to load inside a frame, so open the full site in a new tab instead.
       window.open(FULL_SITE, '_blank', 'noopener');
@@ -74,13 +82,21 @@ export function signIn() {
 }
 
 export async function signOutUser() {
+  setSyncOff(null);
   if (core) await core.signOut();
+}
+
+/** Turn cloud sync back on after it was switched off by deleting the cloud data. */
+export function resumeSync() {
+  setSyncOff(null);
+  if (core?.user) return onUser(core.user);
 }
 
 /**
  * Delete everything this app keeps in the cloud for the signed-in person (logbook, friends profile,
- * friend requests). The copy of the logbook in this browser stays. The sign-in itself is removed only
- * when the person uses no other app on the shared backend. Signs out afterwards.
+ * friend requests). The copy of the logbook in this browser stays. The sign-in itself is removed (and the
+ * person signed out) only when they use no other app on the shared backend. Otherwise they stay signed in
+ * with cloud sync off, so nothing is uploaded again until they turn it back on.
  */
 export async function deleteMyCloudData() {
   if (!core || !cloud.user) throw new Error('Sign in first');
@@ -89,22 +105,26 @@ export async function deleteMyCloudData() {
   fire('pause'); // friends stop listening and publishing, so nothing is written back while deleting
   try {
     await pushing?.catch(() => {});
-    const res = await core.deleteMyData(APP);
-    await core.signOut().catch(() => {});
+    const uid = cloud.user.uid;
+    const res = await core.deleteMyData(APP); // signs out by itself when the whole account went
+    paused = false;
+    if (!res?.accountDeleted && core.user?.uid === uid) { setSyncOff(uid); onUser(core.user); }
     return res;
   } catch (e) {
     paused = false; onUser(core.user); // carry on as before
     throw e;
-  } finally { paused = false; }
+  }
 }
 
 async function onUser(user) {
   if (paused && user) return;
   cloud.user = user ? { uid: user.uid, name: user.name, email: user.email, photo: user.photo } : null;
+  cloud.off = !!user && syncOffFor(user.uid);
   cloud.dispatchEvent(new CustomEvent('user', { detail: cloud.user }));
   if (unsubDoc) { unsubDoc(); unsubDoc = null; }
   clearTimeout(saveTimer);
   if (!user) { setStatus('local'); return; }
+  if (cloud.off) { setStatus('off'); return; } // nothing is read or written until they turn sync back on
   setStatus('connecting');
   const { db, F } = core;
   const ref = F.doc(db, 'whyb_users', user.uid);
@@ -147,7 +167,7 @@ function mergeSettings(s) {
 }
 
 function push() {
-  if (!core || !cloud.user || paused) return Promise.resolve();
+  if (!core || !cloud.user || paused || cloud.off) return Promise.resolve();
   const { db, F } = core, uid = cloud.user.uid;
   const book = JSON.stringify(store.snapshot());
   let settings = JSON.stringify(store.settings);
@@ -165,7 +185,7 @@ function push() {
 }
 
 function schedulePush() {
-  if (!cloud.user || applyingRemote || paused) return;
+  if (!cloud.user || applyingRemote || paused || cloud.off) return;
   clearTimeout(saveTimer);
   if (cloud.status !== 'error') setStatus('saving');
   saveTimer = setTimeout(() => push().catch(e => { console.warn(e); setStatus('error', syncError(e)); }), 1200);

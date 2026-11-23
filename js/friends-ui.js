@@ -1,6 +1,6 @@
 // Friends tab: username setup, requests, leaderboard, head-to-head, overlap on the map.
 import { social, claimUsername, sendRequest, acceptRequest, deleteRequest, removeFriend, leaderboard, overlap, normalizeName, validName, isUsernameFree, suggestUsername, NAME_HINT } from './social.js';
-import { cloud, signIn } from './cloud.js';
+import { cloud, signIn, resumeSync } from './cloud.js';
 import { DATA, flagHTML, esc } from './data.js';
 import { LANDMARK_BY_ID } from './landmarks.js';
 import { paintSprites } from './ui.js';
@@ -41,6 +41,13 @@ export class FriendsUI {
     if (this.pendingInvite && social.state === 'signed-out') this.prefill = this.pendingInvite;
     const st = social.state;
     if (st === 'signed-out') return this.renderSignedOut(body);
+    if (st === 'off') {
+      body.innerHTML = `<div class="p-title"><h2>Compete with friends</h2></div>
+        <p class="blurb">Your Where Have You Been data was deleted from your account, so cloud sync and friends are off. Your logbook is still saved in this browser.</p>
+        <button class="pix-btn primary" id="f-resume">Turn sync back on</button>`;
+      $('#f-resume').onclick = () => resumeSync();
+      return;
+    }
     if (st === 'loading') { body.innerHTML = `<p class="muted">Loading your friends…</p>`; return; }
     if (st === 'error') { body.innerHTML = `<div class="empty"><p>${esc(social.error)}</p></div>`; return; }
     if (st === 'need-username') return this.renderClaim(body);

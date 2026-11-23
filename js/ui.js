@@ -4,7 +4,7 @@ import { loadStates, DATA, UN195, country, stateMeta, loadCountryCities, loadCit
 import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
-import { cloud, signIn, signOutUser, deleteMyCloudData, EMBEDDED } from './cloud.js';
+import { cloud, signIn, signOutUser, deleteMyCloudData, resumeSync, EMBEDDED } from './cloud.js';
 import { computeStats, CONTINENTS } from './stats.js';
 import { FriendsUI } from './friends-ui.js';
 import { social } from './social.js';
@@ -980,24 +980,27 @@ export class UI {
         });
       };
     } else {
-      const st = { synced: 'All changes saved to your account', saving: 'Saving…', connecting: 'Connecting…', error: 'Sync problem', local: '' }[cloud.status] || '';
+      const st = { synced: 'All changes saved to your account', saving: 'Saving…', connecting: 'Connecting…', error: 'Sync problem', off: 'Cloud sync is off', local: '' }[cloud.status] || '';
       const h = store.home;
       card.innerHTML = `${head}<div class="acct-head"><span class="acct-avatar">${u.photo ? `<img src="${esc(u.photo)}" alt="" referrerpolicy="no-referrer">` : esc((u.name || 'U')[0])}</span>
         <div><b style="font-size:18px">${esc(u.name || '')}</b><div class="muted">${esc(u.email || '')}</div><div class="muted" style="margin-top:4px"><span class="sync-dot ${cloud.status}"></span> ${esc(st)}</div></div></div>
         ${cloud.status === 'error' && cloud.lastError ? `<p class="muted" id="sync-error" style="color:var(--c-city)">${esc(cloud.lastError)}</p>` : ''}
+        ${cloud.off ? `<div class="p-sec" id="sync-off"><h3>CLOUD SYNC IS OFF</h3><p class="muted">Your Where Have You Been data was deleted from your account. Your logbook is saved in this browser only, and nothing is uploaded until you turn sync back on.</p><button class="pix-btn small primary" id="g-resume">Turn sync back on</button></div>` : ''}
         <div class="p-sec"><h3>HOME BASE</h3><p class="muted">${h ? `🏠 ${esc(h.label)} <button class="pix-btn small ghost" id="acct-home-go">Go</button>` : 'Not set — use 📍 on the map to find yourself and tap “Set home”.'}</p></div>
-        <div class="p-sec"><h3>FRIENDS</h3><p class="muted">${social.me?.username ? `You're <b>@${esc(social.me.username)}</b>.` : 'Pick a username so friends can add you.'} <button class="pix-btn small ghost" id="acct-friends">Open Friends ›</button></p></div>
-        <div class="row-btns" style="margin-top:20px"><button class="pix-btn small" id="g-signout">Sign out</button><button class="pix-btn small ghost danger" id="g-delete">Delete my Where Have You Been data</button></div>
+        <div class="p-sec" ${cloud.off ? 'hidden' : ''}><h3>FRIENDS</h3><p class="muted">${social.me?.username ? `You're <b>@${esc(social.me.username)}</b>.` : 'Pick a username so friends can add you.'} <button class="pix-btn small ghost" id="acct-friends">Open Friends ›</button></p></div>
+        <div class="row-btns" style="margin-top:20px"><button class="pix-btn small" id="g-signout">Sign out</button><button class="pix-btn small ghost danger" id="g-delete" ${cloud.off ? 'hidden' : ''}>Delete my Where Have You Been data</button></div>
         <div id="g-delete-confirm" hidden><p class="muted" style="margin-top:14px">This permanently deletes your logbook, friends profile and friend requests from your account, and removes you from your friends’ lists. If you use no other app with this sign-in, the sign-in and your username are deleted too. The logbook saved in this browser stays.</p>
           <div class="row-btns"><button class="pix-btn small danger" id="g-delete-yes">Yes, delete it</button><button class="pix-btn small ghost" id="g-delete-no">Cancel</button></div></div>`;
+      if ($('#g-resume')) $('#g-resume').onclick = () => { resumeSync(); this.toast('Cloud sync is back on ☁️'); };
       $('#g-delete').onclick = () => { $('#g-delete-confirm').hidden = false; $('#g-delete').disabled = true; };
       $('#g-delete-no').onclick = () => { $('#g-delete-confirm').hidden = true; $('#g-delete').disabled = false; };
       $('#g-delete-yes').onclick = async () => {
         this._deleting = true; this.renderAccount();
         try {
           const res = await deleteMyCloudData();
-          this._deleting = false; this.closeSheet($('#account-sheet'));
-          this.toast(res?.accountDeleted ? 'Your data and your sign-in were deleted. Your logbook stays in this browser.' : 'Your Where Have You Been data was deleted from your account. Your logbook stays in this browser.', 8000);
+          this._deleting = false;
+          if (res?.accountDeleted) this.closeSheet($('#account-sheet')); else this.renderAccount();
+          this.toast(res?.accountDeleted ? 'Your data and your sign-in were deleted. Your logbook stays in this browser.' : 'Your Where Have You Been data was deleted from your account. You are still signed in, with cloud sync off. Your logbook stays in this browser.', 9000);
         } catch (e) { this._deleting = false; this.renderAccount(); this.toast('Could not delete your data: ' + esc(e?.message || 'unknown'), 7000); }
       };
       if (this._deleting) { $('#g-delete-confirm').hidden = false; $$('#account-card button:not([data-close])').forEach(b => b.disabled = true); $('#g-delete-yes').textContent = 'Deleting…'; }

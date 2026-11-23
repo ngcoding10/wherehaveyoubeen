@@ -8,7 +8,7 @@ import { store } from './store.js';
 import { computeStats } from './stats.js';
 
 export const social = new EventTarget();
-social.state = 'signed-out'; // signed-out | loading | need-username | ready | error
+social.state = 'signed-out'; // signed-out | off (signed in, cloud sync switched off) | loading | need-username | ready | error
 social.error = '';
 social.me = null;            // my profile doc
 social.friends = new Map();  // uid -> profile
@@ -36,6 +36,7 @@ cloud.addEventListener('pause', () => { stop(); uid = null; setState('signed-out
 async function start() {
   stop();
   if (!cloud.user) { uid = null; setState('signed-out'); return; }
+  if (cloud.off) { uid = null; setState('off'); return; } // cloud data was deleted: no profile until sync is back on
   const me = uid = cloud.user.uid;
   setState('loading');
   const core = getCore(), { db, F } = core;
@@ -161,7 +162,13 @@ export async function sendRequest(raw) {
     if ((social.me.friends || []).includes(to)) return { ok: false, msg: `You’re already friends with @${name}.` };
     const theirs = social.incoming.find(r => r.from === to);
     if (theirs) { await acceptRequest(theirs); return { ok: true, msg: `@${name} had already asked, so you’re now friends!` }; }
-    await F.setDoc(F.doc(db, REQUESTS, `${to}_${uid}`), { from: uid, to, fromName: social.me.username, toName: name, createdAt: F.serverTimestamp() });
+    try {
+      await F.setDoc(F.doc(db, REQUESTS, `${to}_${uid}`), { from: uid, to, fromName: social.me.username, toName: name, createdAt: F.serverTimestamp() });
+    } catch (e) {
+      // the name exists (maybe from another app) but the rules only allow requests to people who use this app
+      if (e?.code === 'permission-denied') return { ok: false, msg: `@${name} isn’t on Where Have You Been yet. Send them your invite link.` };
+      throw e;
+    }
     return { ok: true, msg: `Request sent to @${name}. You’ll see each other’s maps once they accept.` };
   } catch (e) { console.warn(e); return { ok: false, msg: friendlyError(e) }; }
 }

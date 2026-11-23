@@ -10,6 +10,7 @@ import { FriendsUI } from './friends-ui.js';
 import { social } from './social.js';
 import { ICON } from './icons.js';
 import { parse as parseQuick, resolveLocal, resolveOnline, candLabel } from './quickadd.js';
+import { fuzzyCountries, fuzzyStates, fuzzyLandmarks, fuzzyCities, fuzzyIn, looselyIn } from './typo.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -454,8 +455,10 @@ export class UI {
     const states = Object.entries(DATA.meta.states).filter(([, s]) => s.cid === cid).sort((a, b) => a[1].name.localeCompare(b[1].name));
     const C = store.settings.colors;
     const drawStates = () => {
-      const q = fold($('#st-filter')?.value);
-      $('#st-list').innerHTML = states.filter(([, s]) => !q || fold(s.name).includes(q)).map(([sid, s]) =>
+      const q = fold($('#st-filter')?.value).trim();
+      let shownStates = states.filter(([, s]) => !q || fold(s.name).includes(q));
+      if (q.length >= 3 && !shownStates.length) shownStates = fuzzyIn(states, ([, s]) => s.name, q); // forgive typos
+      $('#st-list').innerHTML = shownStates.map(([sid, s]) =>
         ckRow('s:' + sid, s.name, s.type, `--ck:${C.state}`, `state:${sid}`)).join('') || '<div class="muted">No regions</div>';
       this.wireCk($('#st-list'), key => this.describe('state', key.slice(2)));
     };
@@ -465,8 +468,9 @@ export class UI {
     if (this.sel?.id !== cid) return;
     const all = [...map.values()];
     const drawCities = () => {
-      const q = fold($('#ci-filter')?.value);
+      const q = fold($('#ci-filter')?.value).trim();
       let list = q ? all.filter(c => fold(c.n).includes(q)).sort((a, b) => (fold(a.n).startsWith(q) ? 0 : 1) - (fold(b.n).startsWith(q) ? 0 : 1) || b.p - a.p) : all;
+      if (q.length >= 3 && list.length < 3) list = withTypos(list, all, q);
       const vis = all.filter(c => store.has('ci:' + c.id));
       if (!q) list = [...vis, ...list.filter(c => !store.has('ci:' + c.id))];
       const shown = list.slice(0, this._ciLimit || 60);
@@ -477,7 +481,7 @@ export class UI {
     };
     this._ciLimit = 60;
     drawCities();
-    $('#ci-filter').oninput = () => { this._ciLimit = 60; drawCities(); };
+    $('#ci-filter').oninput = debounce(() => { this._ciLimit = 60; drawCities(); }, 90);
   }
 
   async renderStateExtra(el, info) {
@@ -493,8 +497,9 @@ export class UI {
     $('#st-count').textContent = all.length.toLocaleString();
     let limit = 80;
     const draw = () => {
-      const q = fold($('#ci-filter').value);
-      let list = q ? all.filter(c => fold(c.n).includes(q)) : [...all.filter(c => store.has('ci:' + c.id)), ...all.filter(c => !store.has('ci:' + c.id))];
+      const q = fold($('#ci-filter').value).trim();
+      if (!$('#ci-list')) return;
+      let list = q ? withTypos(all.filter(c => fold(c.n).includes(q)), all, q) : [...all.filter(c => store.has('ci:' + c.id)), ...all.filter(c => !store.has('ci:' + c.id))];
       const shown = list.slice(0, limit);
       $('#ci-list').innerHTML = shown.map(c => ckRow('ci:' + c.id, c.n, fmtPop(c.p), `--ck:${C.city}`, `city:${c.id}:${cid}`, c.cap)).join('')
         + (list.length > shown.length ? `<button class="pix-btn small ghost more-btn" id="ci-more">Show more (${(list.length - shown.length).toLocaleString()} left)</button>` : '') || '<div class="muted">No cities in our database for this region.</div>';
@@ -502,7 +507,7 @@ export class UI {
       const more = $('#ci-more'); if (more) more.onclick = () => { limit += 200; draw(); };
     };
     draw();
-    $('#ci-filter').oninput = () => { limit = 80; draw(); };
+    $('#ci-filter').oninput = debounce(() => { limit = 80; draw(); }, 90);
   }
   lmState(l) {
     if (!this.stateLmCache.has(l.id)) this.stateLmCache.set(l.id, stateAt(l.lon, l.lat, l.cc));
@@ -631,7 +636,12 @@ export class UI {
     $$('.lb-row', body).forEach(r => r.onclick = () => r.parentElement.classList.toggle('open'));
     this.wireTags(body);
     $('#lb-quick').onclick = () => this.openQuick();
-    $('#lb-filter').oninput = e => { const q = fold(e.target.value); $$('.lb-country', body).forEach(el => el.style.display = !q || el.dataset.name.includes(q) ? '' : 'none'); };
+    $('#lb-filter').oninput = e => {
+      const q = fold(e.target.value).trim(), els = $$('.lb-country', body);
+      let hits = els.filter(el => !q || el.dataset.name.includes(q));
+      if (q.length >= 3 && !hits.length) hits = els.filter(el => looselyIn(q, el.dataset.name)); // forgive typos
+      els.forEach(el => el.style.display = hits.includes(el) ? '' : 'none');
+    };
   }
 
   // ---- passport ----
@@ -718,17 +728,40 @@ export class UI {
       if (!idxLoaded) { idxLoaded = true; loadCityIndex().then(() => run()).catch(() => {}); }
       const score = n => { const f = fold(n); return f === q ? 0 : f.startsWith(q) ? 1 : f.includes(' ' + q) ? 2 : f.includes(q) ? 3 : 9; };
       const pick = (arr, nameFn, n) => arr.map(x => [x, score(nameFn(x))]).filter(([, s]) => s < 9).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
-      const cs = pick(Object.entries(DATA.meta.countries), ([, c]) => c.name + ' ' + c.long, 5);
-      const ss = pick(Object.entries(DATA.meta.states), ([, s]) => s.name, 5);
-      const ls = pick(LANDMARKS, l => l.name, 5);
+      let cs = pick(Object.entries(DATA.meta.countries), ([, c]) => c.name + ' ' + c.long, 5);
+      let ss = pick(Object.entries(DATA.meta.states), ([, s]) => s.name, 5);
+      let ls = pick(LANDMARKS, l => l.name, 5);
       let ci = [];
       try { const idx = await loadCityIndex(); ci = []; for (const r of idx) { const s = score(r[1]); if (s < 9) { ci.push([r, s]); if (ci.length > 400) break; } } ci = ci.sort((a, b) => a[1] - b[1] || b[0][5] - a[0][5]).slice(0, 8).map(([r]) => r); } catch { }
+      // Nothing, or hardly anything, matched as typed: add what they most likely meant ("madird" → Madrid).
+      // A guess ranks after any real match: 4 (a near miss) to 8, so groups still sort sensibly.
+      const guess = new Map();
+      if (q.length >= 3 && cs.length + ss.length + ls.length + ci.length < 3) {
+        const more = (have, index, idOf, n) => {
+          const seen = new Set(have.map(idOf));
+          for (const { item, score: s } of index.search(q, { limit: n, minScore: 0.5 })) {
+            if (have.length >= n || seen.has(idOf(item))) continue;
+            have.push(item); guess.set(item, 4 + (1 - s) * 4);
+          }
+          return have;
+        };
+        cs = more(cs, fuzzyCountries(), x => x[0], 4);
+        ls = more(ls, fuzzyLandmarks(), x => x.id, 4);
+        ss = more(ss, fuzzyStates(), x => x[0], 4);
+        try { ci = more(ci, await fuzzyCities(), x => x[0], 8); } catch { }
+        // "madid" is the start of a few small towns, but far more likely a slip for Madrid: the best guess goes
+        // ahead of partial matches when it is a much bigger city (20× the people). An exactly spelled name stays first.
+        const top = ci.find(r => guess.has(r)), partial = ci.filter(r => !guess.has(r) && score(r[1]) > 0);
+        if (top && partial.length && top[5] >= 20 * Math.max(...partial.map(r => r[5]))) {
+          ci = [...ci.filter(r => !guess.has(r) && score(r[1]) === 0), top, ...partial, ...ci.filter(r => guess.has(r) && r !== top)];
+        }
+      }
       if (fold(input.value.trim()) !== q) return;
       items = [];
       let html = '';
       const groups = [];
       const grp = (title, arr, fn, best) => { if (arr.length) groups.push({ title, arr, fn, best }); };
-      const best = (arr, nameFn, adj = () => 0) => Math.min(...arr.map(x => score(nameFn(x)) + adj(x)));
+      const best = (arr, nameFn, adj = () => 0) => Math.min(...arr.map(x => (guess.get(x) ?? score(nameFn(x))) + adj(x)));
       grp('COUNTRIES', cs, ([id, c]) => [`${flagHTML(id)}<span>${esc(c.name)}</span><span class="sr-sub">${store.isVisited('c:' + id) ? '✓ ' : ''}${esc(c.cont)}</span>`, ['country', id]], best(cs, ([, c]) => c.name) - 0.5);
       grp('WONDERS', ls, l => [`<canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}</span><span class="sr-sub">${store.has('l:' + l.id) ? '★ ' : ''}${esc(country(l.cc)?.name || '')}</span>`, ['landmark', l.id]], best(ls, l => l.name) - 1);
       grp('STATES & REGIONS', ss, ([id, s]) => [`${flagHTML(s.cid)}<span>${esc(s.name)}</span><span class="sr-sub">${store.isVisited('s:' + id) ? '✓ ' : ''}${esc(country(s.cid)?.name)}</span>`, ['state', id]], best(ss, ([, s]) => s.name) - 0.2);
@@ -1012,6 +1045,13 @@ export class UI {
 }
 
 // ───────────────────────── helpers ─────────────────────────
+function debounce(fn, ms) { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; }
+/** A town filter that found little: add the towns they most likely meant (typos forgiven), biggest first. */
+function withTypos(list, all, q) {
+  if (q.length < 3 || list.length >= 3) return list;
+  const have = new Set(list);
+  return [...list, ...fuzzyIn(all, c => c.n, q, { weight: c => c.p || 0 }).filter(c => !have.has(c))];
+}
 function keyOf(c) { return ({ country: 'c:', state: 's:', city: 'ci:', landmark: 'l:' })[c.type] + c.id; }
 function ckRow(key, name, sub, style, go, cap) {
   return `<div class="ck ${store.isVisited(key) ? 'on' : ''}" data-key="${key}" data-go="${go}" style="${style}"><span class="bx"></span><span class="nm">${esc(name)}${cap ? ' <span class="cap">★</span>' : ''}</span><span class="sub">${esc(sub || '')}</span><button class="go" title="Show on map">›</button></div>`;

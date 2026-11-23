@@ -36,3 +36,6 @@ backend ([backend-combination](https://github.com/ngcoding10/backend-combination
 cloud save, usernames, friend requests, rename, delete-my-data and the signed-out mode.
 Start the emulators from the backend repo, serve this folder on port 8000, then run
 `node tools/e2e-emulator.js` (needs `npm i playwright`).
+
+`e2e-search.js` checks that the search boxes and Quick add forgive typos ("madid", "madird" → Madrid).
+It needs no backend: serve this folder on port 8000 and run `node tools/e2e-search.js`.

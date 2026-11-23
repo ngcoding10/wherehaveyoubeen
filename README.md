@@ -45,6 +45,7 @@ landmarks along the way.
   service. No API key needed. Pick a different match from the dropdown if a name is
   ambiguous.
 - **Search** across countries, states, cities and wonders. Press `/` to jump to it.
+  Every search box forgives typos: "madird" still finds Madrid, "frnace" finds France.
 - **4 map styles:** Midnight, Atlas (vintage paper), Arcade (neon 8-bit) and Daylight.
 - **Saving:**
   - Without an account, everything saves in your browser automatically.

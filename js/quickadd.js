@@ -3,6 +3,7 @@
 // looked up on OpenStreetMap's free Nominatim geocoder (no API key) and snapped to our places.
 import { DATA, loadStates, loadCityIndex, loadCountryCities, fold, haversine, countryAt, stateAt, country, stateMeta } from './data.js';
 import { LANDMARKS } from './landmarks.js';
+import { fuzzyCountries, fuzzyStates, fuzzyLandmarks, fuzzyCities, misspellingOf } from './typo.js';
 
 const ALIASES = {
   'nyc': 'new york city', 'new york': 'new york city', 'ny': 'new york city', 'manhattan': 'new york city',
@@ -121,9 +122,35 @@ export async function resolveLocal({ text, qual }) {
     cands.push({ type: 'city', id: gid, label: name, sub: [sname, country(ccid)?.name].filter(Boolean).join(', '), cid: ccid,
       lat, lon, pop, score: (n === q ? 60 : 55) + Math.log10(pop + 1) * 5 });
   }
+  if (!cands.length) cands.push(...await misspelled(text, q, qual));
   cands.sort((a, b) => b.score - a.score);
   const seen = new Set();
   return cands.filter(c => { const k = c.type + c.id; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 8);
+}
+
+/**
+ * Nothing is spelled like this: look for places it is a misspelling of ("Madird", "Bejing", "Eifel Tower").
+ * Only whole-name misspellings count, so a real but unlisted village still goes to the online lookup.
+ * Scores sit below every exact match; cities are ranked by size.
+ */
+async function misspelled(text, q, qual) {
+  if (q.replace(/ /g, '').length < 4) return [];
+  const out = [], opts = { limit: 12, minScore: 0.6 };
+  const ok = name => misspellingOf(q, name) || misspellingOf(text, name);
+  if (!qual) for (const { item: [id, c], score } of fuzzyCountries().search(q, opts)) {
+    if (ok(c.name) || ok(c.long)) out.push({ type: 'country', id, label: c.name, sub: c.cont, cid: id, score: 95 * score, typo: true });
+  }
+  for (const { item: l, score } of fuzzyLandmarks().search(q, opts)) {
+    if (ok(l.name) && qualMatch(qual, l.cc, '')) out.push({ type: 'landmark', id: l.id, label: l.name, sub: country(l.cc)?.name || '', cid: l.cc, score: 90 * score, typo: true });
+  }
+  for (const { item: [sid, s], score } of fuzzyStates().search(q, opts)) {
+    if (ok(s.name) && qualMatch(qual, s.cid, s.name)) out.push({ type: 'state', id: sid, label: s.name, sub: `${s.type || 'Region'}, ${country(s.cid)?.name}`, cid: s.cid, score: 80 * score, typo: true });
+  }
+  for (const { item: r, score } of (await fuzzyCities()).search(q, { ...opts, limit: 30 })) {
+    const [gid, name, ccid, lat, lon, pop, sname] = r;
+    if (ok(name) && qualMatch(qual, ccid, sname)) out.push({ type: 'city', id: gid, label: name, sub: [sname, country(ccid)?.name].filter(Boolean).join(', '), cid: ccid, lat, lon, pop, score: (55 + Math.log10(pop + 1) * 5) * score, typo: true });
+  }
+  return out;
 }
 
 // ---- online fallback (OpenStreetMap Nominatim, 1 request per second, no key) ----

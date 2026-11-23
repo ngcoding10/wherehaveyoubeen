@@ -28,3 +28,11 @@ Then rebuild:
 ```bash
 python3 tools/build_data.py raw data
 ```
+
+# Checking sign-in, sync and friends end to end
+
+`e2e-emulator.js` drives the site in a headless browser against the Firebase emulators of the
+backend ([backend-combination](https://github.com/ngcoding10/backend-combination)): sign-in,
+cloud save, usernames, friend requests, rename, delete-my-data and the signed-out mode.
+Start the emulators from the backend repo, serve this folder on port 8000, then run
+`node tools/e2e-emulator.js` (needs `npm i playwright`).

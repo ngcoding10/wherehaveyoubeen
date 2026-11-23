@@ -1,6 +1,9 @@
 // Friends: unique usernames, mutual friend requests, and a friends-only profile with your stats
-// and visited places (never your notes, dates or home base). Backed by Firestore; see firestore.rules.
-import { cloud, getFirebase } from './cloud.js';
+// and visited places (never your notes, dates or home base). Backed by Firestore (whyb_profiles,
+// whyb_requests). The username is the shared account's: one per person across every app on the backend,
+// claimed and looked up through the core (accounts/usernames are never written here).
+import { cloud, getCore } from './cloud.js';
+import { normalizeUsername, validUsername } from './core.js';
 import { store } from './store.js';
 import { computeStats } from './stats.js';
 
@@ -12,30 +15,44 @@ social.friends = new Map();  // uid -> profile
 social.incoming = [];        // requests to me
 social.outgoing = [];        // requests from me
 
-const NAME_RE = /^[a-z0-9_]{3,20}$/;
-export const normalizeName = s => (s || '').trim().replace(/^@+/, '').toLowerCase();
-export const validName = s => NAME_RE.test(s);
+export const normalizeName = normalizeUsername;
+export const validName = validUsername; // ^[a-z0-9_.]{3,20}$
+export const NAME_HINT = 'Use 3–20 characters: lowercase letters, numbers, dots or underscores';
+const PROFILES = 'whyb_profiles', REQUESTS = 'whyb_requests';
 
 let unsubs = [], friendSubs = new Map(), retries = new Map(), publishTimer = null, uid = null;
 const emit = () => social.dispatchEvent(new CustomEvent('change'));
 function setState(s, err = '') { social.state = s; social.error = err; emit(); }
 function friendlyError(e) {
-  if (e?.code === 'permission-denied') return 'The friends database isn’t switched on yet. The site owner needs to publish the new Firestore rules (see README → Friends).';
+  if (e?.code === 'permission-denied') return 'The server refused that. Reload the page and try again.';
   if (e?.code === 'unavailable') return 'You seem to be offline.';
   return e?.message || String(e);
 }
 
 cloud.addEventListener('user', () => start());
+// the account's cloud data is being deleted: stop listening and publishing so nothing is written back
+cloud.addEventListener('pause', () => { stop(); uid = null; setState('signed-out'); });
 
 async function start() {
   stop();
   if (!cloud.user) { uid = null; setState('signed-out'); return; }
-  uid = cloud.user.uid;
+  const me = uid = cloud.user.uid;
   setState('loading');
-  const { db, F } = await getFirebase();
+  const core = getCore(), { db, F } = core;
   try {
-    const snap = await F.getDoc(F.doc(db, 'profiles', uid));
-    if (!snap.exists() || !snap.data().username) { social.me = null; setState('need-username'); return; }
+    const ref = F.doc(db, PROFILES, me);
+    let snap = await F.getDoc(ref);
+    if (uid !== me) return;
+    if (!snap.exists() || !snap.data().username) {
+      // Someone who already has a username (picked here before, or in another app) is not asked again:
+      // their profile for this app is created with that name.
+      const account = await core.account.get(me);
+      if (uid !== me) return;
+      if (!account?.username) { social.me = null; setState('need-username'); return; }
+      await F.setDoc(ref, { ...publicPayload(), username: account.username, friends: [], updatedAt: F.serverTimestamp() });
+      snap = await F.getDoc(ref);
+      if (uid !== me) return;
+    }
     social.me = snap.data();
     listen();
     setState('ready');
@@ -44,32 +61,33 @@ async function start() {
 }
 
 function stop() {
+  clearTimeout(publishTimer);
   unsubs.forEach(u => u()); unsubs = [];
   friendSubs.forEach(u => u()); friendSubs.clear();
   social.friends.clear(); social.incoming = []; social.outgoing = []; social.me = null;
 }
 
-async function listen() {
-  const { db, F } = await getFirebase();
+function listen() {
+  const { db, F } = getCore();
   const onErr = e => { console.warn(e); setState('error', friendlyError(e)); };
-  unsubs.push(F.onSnapshot(F.doc(db, 'profiles', uid), { includeMetadataChanges: true }, s => {
+  unsubs.push(F.onSnapshot(F.doc(db, PROFILES, uid), { includeMetadataChanges: true }, s => {
     // wait until our own writes (e.g. accepting a request) are saved before reading friends' profiles
     if (!s.exists() || s.metadata.hasPendingWrites) return;
     social.me = s.data();
     syncFriendSubs(social.me.friends || []);
     emit();
   }, onErr));
-  const reqs = F.collection(db, 'requests');
+  const reqs = F.collection(db, REQUESTS);
   unsubs.push(F.onSnapshot(F.query(reqs, F.where('to', '==', uid)), qs => { social.incoming = qs.docs.map(d => ({ id: d.id, ...d.data() })); emit(); }, onErr));
   unsubs.push(F.onSnapshot(F.query(reqs, F.where('from', '==', uid)), qs => { social.outgoing = qs.docs.map(d => ({ id: d.id, ...d.data() })); emit(); }, onErr));
 }
 
-async function syncFriendSubs(list) {
-  const { db, F } = await getFirebase();
+function syncFriendSubs(list) {
+  const { db, F } = getCore();
   for (const [fid, u] of friendSubs) if (!list.includes(fid)) { u(); friendSubs.delete(fid); social.friends.delete(fid); }
   for (const fid of list) {
     if (friendSubs.has(fid)) continue;
-    friendSubs.set(fid, F.onSnapshot(F.doc(db, 'profiles', fid),
+    friendSubs.set(fid, F.onSnapshot(F.doc(db, PROFILES, fid),
       s => { if (s.exists()) social.friends.set(fid, { uid: fid, ...s.data() }); emit(); },
       () => {
         // not allowed (yet): they removed you, or their side of the friendship is still saving. Retry a few times.
@@ -80,16 +98,15 @@ async function syncFriendSubs(list) {
   }
 }
 
-/** What friends can see about you. */
+/** What friends can see about you (the username is kept in step with the account, never set here). */
 function publicPayload() {
   const st = computeStats();
   return {
-    username: social.me?.username,
     name: (cloud.user?.name || '').split(' ')[0].slice(0, 30),
     stats: { countries: st.un, territories: st.terr, states: st.states, cities: st.cities, wonders: st.lms,
              world: Math.round(st.pctWorld * 10) / 10, continents: st.conts },
     visited: { c: store.visitedCountries(), s: store.visitedStates(), l: store.landmarks(),
-               ci: store.cities().slice(0, 4000).map(([id, c]) => [+id, c.n, c.c]) },
+               ci: store.cities().slice(0, 4000).map(([id, c]) => ({ i: +id, n: c.n || '', c: c.c || '' })) },
   };
 }
 
@@ -97,37 +114,38 @@ export function schedulePublish(delay = 2500) {
   if (social.state !== 'ready') return;
   clearTimeout(publishTimer);
   publishTimer = setTimeout(async () => {
+    if (social.state !== 'ready' || !uid) return;
     try {
-      const { db, F } = await getFirebase();
-      await F.setDoc(F.doc(db, 'profiles', uid), { ...publicPayload(), updatedAt: F.serverTimestamp() }, { merge: true });
+      const { db, F } = getCore();
+      await F.setDoc(F.doc(db, PROFILES, uid), { ...publicPayload(), updatedAt: F.serverTimestamp() }, { merge: true });
     } catch (e) { console.warn('publish failed', e); }
   }, delay);
 }
 store.addEventListener('change', () => schedulePublish());
 
-export async function isUsernameFree(name) {
-  const { db, F } = await getFirebase();
-  const s = await F.getDoc(F.doc(db, 'usernames', name));
-  return !s.exists() || s.data().uid === uid;
-}
+/** Is this username free (or already mine)? */
+export const isUsernameFree = name => getCore().account.isFree(name);
+/** A free username built from the person's name or email, e.g. "sam.lee". */
+export const suggestUsername = () => getCore().account.suggest(cloud.user?.name || cloud.user?.email || '');
 
 /** Claim (or change) your username. Returns an error message, or '' on success. */
 export async function claimUsername(raw) {
   const name = normalizeName(raw);
-  if (!validName(name)) return 'Use 3–20 characters: lowercase letters, numbers or _';
-  const { db, F } = await getFirebase();
+  if (!validName(name)) return NAME_HINT;
+  const core = getCore(), { db, F } = core;
   try {
-    if (!(await isUsernameFree(name))) return `@${name} is taken, so try another`;
-    const old = social.me?.username;
-    const batch = F.writeBatch(db);
-    const payload = { ...publicPayload(), username: name, friends: social.me?.friends || [], updatedAt: F.serverTimestamp() };
-    batch.set(F.doc(db, 'profiles', uid), payload, { merge: true });
-    batch.set(F.doc(db, 'usernames', name), { uid });
-    if (old && old !== name) batch.delete(F.doc(db, 'usernames', old));
-    await batch.commit();
+    await core.account.claim(name, {
+      // our own profile goes in the same all-or-nothing batch as the account and the username
+      async extra(batch) {
+        const ref = F.doc(db, PROFILES, uid);
+        const mine = { ...publicPayload(), updatedAt: F.serverTimestamp() };
+        if ((await F.getDoc(ref)).exists()) batch.set(ref, mine, { merge: true }); // the core has already renamed it
+        else batch.set(ref, { ...mine, username: name, friends: [] });
+      },
+    });
     if (social.state !== 'ready') { await start(); } else { social.me = { ...social.me, username: name }; emit(); }
     return '';
-  } catch (e) { console.warn(e); return friendlyError(e); }
+  } catch (e) { console.warn(e); return e?.code ? friendlyError(e) : (e?.message || String(e)); }
 }
 
 /** Send a friend request by username. Returns { ok, msg }. */
@@ -135,38 +153,38 @@ export async function sendRequest(raw) {
   const name = normalizeName(raw);
   if (!validName(name)) return { ok: false, msg: 'That isn’t a valid username.' };
   if (name === social.me?.username) return { ok: false, msg: 'That’s you! 😄' };
-  const { db, F } = await getFirebase();
+  const core = getCore(), { db, F } = core;
   try {
-    const u = await F.getDoc(F.doc(db, 'usernames', name));
-    if (!u.exists()) return { ok: false, msg: `No one has the username @${name} yet.` };
-    const to = u.data().uid;
+    const to = await core.account.ownerOf(name);
+    if (!to) return { ok: false, msg: `No one has the username @${name} yet.` };
+    if (to === uid) return { ok: false, msg: 'That’s you! 😄' };
     if ((social.me.friends || []).includes(to)) return { ok: false, msg: `You’re already friends with @${name}.` };
     const theirs = social.incoming.find(r => r.from === to);
     if (theirs) { await acceptRequest(theirs); return { ok: true, msg: `@${name} had already asked, so you’re now friends!` }; }
-    await F.setDoc(F.doc(db, 'requests', `${to}_${uid}`), { from: uid, to, fromName: social.me.username, toName: name, createdAt: F.serverTimestamp() });
+    await F.setDoc(F.doc(db, REQUESTS, `${to}_${uid}`), { from: uid, to, fromName: social.me.username, toName: name, createdAt: F.serverTimestamp() });
     return { ok: true, msg: `Request sent to @${name}. You’ll see each other’s maps once they accept.` };
   } catch (e) { console.warn(e); return { ok: false, msg: friendlyError(e) }; }
 }
 
 export async function acceptRequest(r) {
-  const { db, F } = await getFirebase();
+  const { db, F } = getCore();
   const batch = F.writeBatch(db);
-  batch.update(F.doc(db, 'profiles', uid), { friends: F.arrayUnion(r.from) });
-  batch.update(F.doc(db, 'profiles', r.from), { friends: F.arrayUnion(uid) });
-  batch.delete(F.doc(db, 'requests', r.id));
+  batch.update(F.doc(db, PROFILES, uid), { friends: F.arrayUnion(r.from) });
+  batch.update(F.doc(db, PROFILES, r.from), { friends: F.arrayUnion(uid) });
+  batch.delete(F.doc(db, REQUESTS, r.id));
   await batch.commit();
 }
 export async function deleteRequest(r) {
-  const { db, F } = await getFirebase();
-  await F.deleteDoc(F.doc(db, 'requests', r.id));
+  const { db, F } = getCore();
+  await F.deleteDoc(F.doc(db, REQUESTS, r.id));
 }
 export async function removeFriend(fid) {
-  const { db, F } = await getFirebase();
+  const { db, F } = getCore();
   const batch = F.writeBatch(db);
-  batch.update(F.doc(db, 'profiles', uid), { friends: F.arrayRemove(fid) });
-  batch.update(F.doc(db, 'profiles', fid), { friends: F.arrayRemove(uid) });
+  batch.update(F.doc(db, PROFILES, uid), { friends: F.arrayRemove(fid) });
+  batch.update(F.doc(db, PROFILES, fid), { friends: F.arrayRemove(uid) });
   try { await batch.commit(); }
-  catch { await F.updateDoc(F.doc(db, 'profiles', uid), { friends: F.arrayRemove(fid) }); } // their profile may be gone
+  catch { await F.updateDoc(F.doc(db, PROFILES, uid), { friends: F.arrayRemove(fid) }); } // their profile may be gone
 }
 
 /** You + friends, as comparable rows. */

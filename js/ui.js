@@ -4,7 +4,7 @@ import { loadStates, DATA, UN195, country, stateMeta, loadCountryCities, loadCit
 import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
-import { cloud, signIn, signOutUser, EMBEDDED } from './cloud.js';
+import { cloud, signIn, signOutUser, deleteMyCloudData, EMBEDDED } from './cloud.js';
 import { computeStats, CONTINENTS } from './stats.js';
 import { FriendsUI } from './friends-ui.js';
 import { social } from './social.js';
@@ -45,7 +45,14 @@ export class UI {
     store.addEventListener('change', e => this.onStoreChange(e.detail.keys));
     store.addEventListener('settings', e => this.onSettings(e.detail.path));
     cloud.addEventListener('user', () => { this.renderAccountBtn(); if (!$('#account-sheet').hidden) this.renderAccount(); });
-    cloud.addEventListener('status', () => { this.renderAccountBtn(); if (!$('#account-sheet').hidden) this.renderAccount(); });
+    cloud.addEventListener('status', e => {
+      this.renderAccountBtn(); if (!$('#account-sheet').hidden) this.renderAccount();
+      // a sync problem is never silent: say what went wrong (once per problem)
+      const { status, msg } = e.detail;
+      if (status === 'synced') this._syncErr = '';
+      else if (status === 'error' && msg && cloud.user && msg !== this._syncErr) { this._syncErr = msg; this.toast('☁️ Sync problem: ' + esc(msg), 9000); }
+    });
+    cloud.addEventListener('ready', () => { if (!$('#account-sheet').hidden) this.renderAccount(); });
     this.renderAccountBtn();
     if (store.home) this.map.setMarker('home', [store.home.lon, store.home.lat], 'Home: ' + store.home.label);
   }
@@ -959,33 +966,41 @@ export class UI {
     const head = `<div class="sheet-head"><h2>YOUR ACCOUNT</h2><button class="x" data-close>✕</button></div>`;
     if (!cloud.enabled) {
       card.innerHTML = `${head}<p class="blurb">Google sign-in isn’t switched on for this copy of the app yet. Your logbook is being <b>saved in this browser</b> in the meantime (and you can export it from 🎨).</p>
-        <h3>TURN ON GOOGLE SIGN-IN (≈5 MIN, FREE)</h3>
-        <ol class="setup-steps"><li>Create a project at <a href="https://console.firebase.google.com/" target="_blank" rel="noopener">console.firebase.google.com</a>.</li>
-        <li><b>Build → Authentication → Sign-in method</b>: enable <b>Google</b>.</li>
-        <li><b>Build → Firestore Database</b>: create a database, then paste the rules from <code>firestore.rules</code>.</li>
-        <li><b>Project settings → Your apps → Web</b>: register an app and copy its config into <code>js/firebase-config.js</code>.</li>
-        <li><b>Authentication → Settings → Authorized domains</b>: add the domain this site runs on.</li></ol>
-        <p class="muted">After that, anything you logged here will be merged into your account the first time you sign in.</p>`;
+        <p class="muted">Once sign-in is on, anything you logged here will be merged into your account the first time you sign in.</p>`;
     } else if (!u) {
       card.innerHTML = `${head}<p class="blurb">Sign in to save your logbook, home base and settings to your Google account, and keep them in sync across your phone and computer.</p>
-        <button class="gbtn" id="g-signin">${G} Sign in with Google</button>
+        <button class="gbtn" id="g-signin" ${cloud.ready && !cloud.failed ? '' : 'disabled'}>${G} ${cloud.failed ? 'Sign-in is unavailable' : cloud.ready ? 'Sign in with Google' : 'Loading…'}</button>
         <p class="muted" style="margin-top:16px">Places you’ve already logged on this device will be merged into your account.</p>
-        ${cloud.status === 'error' ? `<p class="muted" style="color:var(--c-city)">Sign-in problem: ${esc(cloud.lastError || 'could not reach Google')}</p>` : ''}`;
-      $('#g-signin').onclick = async () => {
-        try { await signIn(); $('#account-sheet').hidden = true; this.toast('Signed in — syncing your logbook ☁️'); }
-        catch (e) {
+        ${cloud.failed ? `<p class="muted" style="color:var(--c-city)">Could not reach Google sign-in. Check your connection and reload the page.</p>` : ''}`;
+      // signIn() is called straight from the click, with nothing awaited first, so the browser lets the window open
+      $('#g-signin').onclick = () => {
+        signIn().then(user => { if (user) { this.closeSheet($('#account-sheet')); this.toast('Signed in — syncing your logbook ☁️'); } }, e => {
           if (e?.code === 'embed/opened-full-site') { this.closeSheet($('#account-sheet')); this.toast('This browser blocks Google sign-in inside other websites, so the full site opened in a new tab. Sign in there, with the same account everywhere.', 7000); }
-          else if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') { cloud.lastError = e?.message; this.toast('Sign-in failed: ' + esc(e?.code || e?.message || 'unknown')); }
-        }
+          else this.toast('Sign-in failed: ' + esc(e?.message || e?.code || 'unknown'), 6000);
+        });
       };
     } else {
       const st = { synced: 'All changes saved to your account', saving: 'Saving…', connecting: 'Connecting…', error: 'Sync problem', local: '' }[cloud.status] || '';
       const h = store.home;
       card.innerHTML = `${head}<div class="acct-head"><span class="acct-avatar">${u.photo ? `<img src="${esc(u.photo)}" alt="" referrerpolicy="no-referrer">` : esc((u.name || 'U')[0])}</span>
         <div><b style="font-size:18px">${esc(u.name || '')}</b><div class="muted">${esc(u.email || '')}</div><div class="muted" style="margin-top:4px"><span class="sync-dot ${cloud.status}"></span> ${esc(st)}</div></div></div>
+        ${cloud.status === 'error' && cloud.lastError ? `<p class="muted" id="sync-error" style="color:var(--c-city)">${esc(cloud.lastError)}</p>` : ''}
         <div class="p-sec"><h3>HOME BASE</h3><p class="muted">${h ? `🏠 ${esc(h.label)} <button class="pix-btn small ghost" id="acct-home-go">Go</button>` : 'Not set — use 📍 on the map to find yourself and tap “Set home”.'}</p></div>
         <div class="p-sec"><h3>FRIENDS</h3><p class="muted">${social.me?.username ? `You're <b>@${esc(social.me.username)}</b>.` : 'Pick a username so friends can add you.'} <button class="pix-btn small ghost" id="acct-friends">Open Friends ›</button></p></div>
-        <div class="row-btns" style="margin-top:20px"><button class="pix-btn small" id="g-signout">Sign out</button></div>`;
+        <div class="row-btns" style="margin-top:20px"><button class="pix-btn small" id="g-signout">Sign out</button><button class="pix-btn small ghost danger" id="g-delete">Delete my Where Have You Been data</button></div>
+        <div id="g-delete-confirm" hidden><p class="muted" style="margin-top:14px">This permanently deletes your logbook, friends profile and friend requests from your account, and removes you from your friends’ lists. If you use no other app with this sign-in, the sign-in and your username are deleted too. The logbook saved in this browser stays.</p>
+          <div class="row-btns"><button class="pix-btn small danger" id="g-delete-yes">Yes, delete it</button><button class="pix-btn small ghost" id="g-delete-no">Cancel</button></div></div>`;
+      $('#g-delete').onclick = () => { $('#g-delete-confirm').hidden = false; $('#g-delete').disabled = true; };
+      $('#g-delete-no').onclick = () => { $('#g-delete-confirm').hidden = true; $('#g-delete').disabled = false; };
+      $('#g-delete-yes').onclick = async () => {
+        this._deleting = true; this.renderAccount();
+        try {
+          const res = await deleteMyCloudData();
+          this._deleting = false; this.closeSheet($('#account-sheet'));
+          this.toast(res?.accountDeleted ? 'Your data and your sign-in were deleted. Your logbook stays in this browser.' : 'Your Where Have You Been data was deleted from your account. Your logbook stays in this browser.', 8000);
+        } catch (e) { this._deleting = false; this.renderAccount(); this.toast('Could not delete your data: ' + esc(e?.message || 'unknown'), 7000); }
+      };
+      if (this._deleting) { $('#g-delete-confirm').hidden = false; $$('#account-card button:not([data-close])').forEach(b => b.disabled = true); $('#g-delete-yes').textContent = 'Deleting…'; }
       $('#acct-friends').onclick = () => { this.closeSheet($('#account-sheet')); this.setTab('friends'); };
       $('#g-signout').onclick = async () => { await signOutUser(); this.toast('Signed out. Your logbook stays on this device.'); };
       const g = $('#acct-home-go'); if (g) g.onclick = () => { $('#account-sheet').hidden = true; this.map.flyTo(h.lon, h.lat, 9); };

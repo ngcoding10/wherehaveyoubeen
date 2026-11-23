@@ -49,7 +49,7 @@ landmarks along the way.
 - **Saving:**
   - Without an account, everything saves in your browser automatically.
   - With **Sign in with Google**, your logbook, home base and settings sync to your
-    account live, across devices. You have to set this up once, see below.
+    account live, across devices.
   - You can also export or import a JSON backup.
 
 ## Run it
@@ -68,31 +68,35 @@ because browsers block loading the data files that way.
 The site is published with **Settings → Pages → Deploy from a branch → `main` / root**. Every
 push to `main` goes live within a minute or two. There's no build step.
 
-## Turn on Google sign-in
+## Sign-in and the backend
 
-Google sign-in uses Firebase (free tier). It is already configured for this site
-(`js/firebase-config.js`). If you fork the project, create your own Firebase project like this:
+Google sign-in and cloud saving use Firebase. **The backend is not in this repo.** The
+security rules, Cloud Functions and their tests live in
+[github.com/ngcoding10/backend-combination](https://github.com/ngcoding10/backend-combination),
+one Firebase project shared by several apps. This repo holds only the website and the
+public web config:
 
-1. Go to <https://console.firebase.google.com/> and create a project. Analytics is optional.
-2. Go to **Build → Authentication → Get started → Sign-in method** and enable **Google**.
-3. Go to **Build → Firestore Database → Create database** and choose production mode. Then
-   open the **Rules** tab, paste in the contents of [`firestore.rules`](firestore.rules)
-   and click Publish. These rules only let each signed-in user read and write their own
-   logbook.
-4. Go to **Project settings (⚙️) → General → Your apps → Web (`</>`)** and register an app.
-   Copy the `firebaseConfig` object into [`js/firebase-config.js`](js/firebase-config.js),
-   replacing `null`.
-5. Go to **Authentication → Settings → Authorized domains** and add the domain the site
-   runs on, for example `your-username.github.io`. `localhost` is already allowed.
+- [`js/firebase-config.js`](js/firebase-config.js): `firebaseConfig` and `appCheckSiteKey`,
+  both public values pasted from the Firebase console. While `firebaseConfig` is `null`
+  the app works signed-out and saves in the browser only.
+- [`js/core.js`](js/core.js): the shared Firebase module, copied unchanged from the
+  backend repo (`web/core.js`). Don't edit it here; edit it there and copy it again.
 
-The Firebase web config is not a secret. It's meant to be public, and the Firestore
-rules are what protect the data. When you first sign in, anything you logged while
-signed out is merged into your account. Merges are done place by place, with the newest
-change winning, and deletions sync too.
+This app's data is `whyb_users/{uid}` (your private logbook), `whyb_profiles/{uid}` (what
+friends see) and `whyb_requests/{to}_{from}` (friend requests). When you first sign in,
+anything you logged while signed out is merged into your account. Merges are done place
+by place, with the newest change winning, and deletions sync too. **Delete my Where Have
+You Been data** in the account sheet removes all of it from the cloud.
+
+To test against the backend's local emulators, start them from the backend repo, serve
+this folder and open `http://localhost:8000/?emulator`. See [`tools/README.md`](tools/README.md)
+for the end-to-end check.
 
 ## Friends & leaderboard
 
-Signed-in users pick a unique **username** and add each other with friend requests,
+Signed-in users pick a unique **username** (3–20 lowercase letters, numbers, dots or
+underscores; it is the same username in every app on the shared backend, so someone who
+already has one isn't asked again) and add each other with friend requests,
 or by sharing an invite link (`…/?add=username`). Friendship is mutual, so you only
 see someone's map after they accept. The 👥 Friends tab has:
 
@@ -103,11 +107,6 @@ see someone's map after they accept. The 👥 Friends tab has:
 
 Friends see your username, stats and visited places. They never see your notes, dates
 or home base, which stay in your private logbook.
-
-**This needs the Firestore rules in [`firestore.rules`](firestore.rules).** When they
-change, paste the whole file into Firebase console → Firestore Database → Rules →
-Publish. The rules are tested with the Firebase emulator (28 checks: privacy,
-forged requests, username theft, unfriending).
 
 ## Data & credits
 

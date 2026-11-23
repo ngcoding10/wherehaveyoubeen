@@ -1,5 +1,5 @@
 // Friends tab: username setup, requests, leaderboard, head-to-head, overlap on the map.
-import { social, claimUsername, sendRequest, acceptRequest, deleteRequest, removeFriend, leaderboard, overlap, normalizeName, validName } from './social.js';
+import { social, claimUsername, sendRequest, acceptRequest, deleteRequest, removeFriend, leaderboard, overlap, normalizeName, validName, isUsernameFree, suggestUsername, NAME_HINT } from './social.js';
 import { cloud, signIn } from './cloud.js';
 import { DATA, flagHTML, esc } from './data.js';
 import { LANDMARK_BY_ID } from './landmarks.js';
@@ -14,8 +14,11 @@ const SITE = location.origin + location.pathname.replace(/index\.html$/, '');
 export class FriendsUI {
   constructor(ui) {
     this.ui = ui; this.metric = 'countries'; this.compareWith = null; this.msg = null;
-    this.pendingInvite = normalizeName(new URLSearchParams(location.search).get('add') || '');
+    // invite links: …/?add=username (usernames may contain dots)
+    const invite = normalizeName(new URLSearchParams(location.search).get('add') || '');
+    this.pendingInvite = validName(invite) ? invite : '';
     social.addEventListener('change', () => this.onChange());
+    cloud.addEventListener('ready', () => { if (this.ui.tab === 'friends' && social.state === 'signed-out') this.ui.renderPanel(); });
   }
   onChange() {
     const n = social.incoming.length;
@@ -34,7 +37,7 @@ export class FriendsUI {
   }
 
   render(body) {
-    if (!cloud.enabled) { body.innerHTML = `<div class="empty"><p>Friends needs Google sign-in, which isn't set up on this copy of the app.</p></div>`; return; }
+    if (!cloud.enabled) { body.innerHTML = `<div class="empty"><p>Friends needs Google sign-in, which isn't switched on for this copy of the app yet.</p></div>`; return; }
     if (this.pendingInvite && social.state === 'signed-out') this.prefill = this.pendingInvite;
     const st = social.state;
     if (st === 'signed-out') return this.renderSignedOut(body);
@@ -48,38 +51,53 @@ export class FriendsUI {
   renderSignedOut(body) {
     body.innerHTML = `<div class="p-title"><h2>Compete with friends</h2></div>
       <p class="blurb">Pick a username, add friends, and see who's been the most places. Compare countries side by side and see everywhere you've both been on the map.</p>
-      ${this.prefill ? `<p class="muted">You were invited to add <b>@${esc(this.prefill)}</b>. Sign in first.</p>` : ''}
-      <button class="gbtn" id="f-signin">Sign in with Google</button>
+      ${this.pendingInvite ? `<p class="muted">You were invited to add <b>@${esc(this.pendingInvite)}</b>. Sign in first.</p>` : ''}
+      <button class="gbtn" id="f-signin" ${cloud.ready && !cloud.failed ? '' : 'disabled'}>${cloud.failed ? 'Sign-in is unavailable. Reload to try again.' : cloud.ready ? 'Sign in with Google' : 'Loading…'}</button>
       <p class="muted" style="margin-top:14px">Your friends only see your username, your stats and the places you've been, never your notes, dates or home base.</p>`;
-    $('#f-signin').onclick = async () => {
-      try { await signIn(); }
-      catch (e) {
+    // signIn() is called straight from the click, with nothing awaited first, so the browser lets the window open
+    $('#f-signin').onclick = () => {
+      signIn().catch(e => {
         if (e?.code === 'embed/opened-full-site') this.ui.toast('This browser blocks Google sign-in inside other websites, so the full site opened in a new tab. Sign in there.', 7000);
-        else if (!/popup-closed|cancelled/.test(e?.code || '')) this.ui.toast('Sign-in failed: ' + esc(e?.code || e?.message));
-      }
+        else this.ui.toast('Sign-in failed: ' + esc(e?.message || e?.code));
+      });
     };
   }
 
   renderClaim(body, changing) {
     const cur = social.me?.username || '';
     body.innerHTML = `<div class="p-title"><h2>${changing ? 'Change your username' : 'Pick a username'}</h2></div>
-      <p class="blurb">Friends add you by this name. Use 3–20 lowercase letters, numbers or _.</p>
-      <div class="add-row"><span class="at">@</span><input class="filter-input" id="f-name" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="yourname" value="${esc(cur || suggestName())}">
+      <p class="blurb">Friends add you by this name, and it is your username in every app you sign in to with this account. ${NAME_HINT}.</p>
+      <div class="add-row"><span class="at">@</span><input class="filter-input" id="f-name" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="yourname" value="${esc(this.claimDraft ?? (cur || suggestName()))}">
       <button class="pix-btn primary" id="f-claim">${changing ? 'Save' : 'Claim'}</button></div>
       <p class="muted" id="f-claim-msg"></p>${changing ? `<button class="pix-btn small ghost" id="f-cancel">Cancel</button>` : ''}`;
     const inp = $('#f-name'), msg = $('#f-claim-msg');
-    inp.oninput = () => { const n = normalizeName(inp.value); msg.textContent = n && !validName(n) ? 'Only a–z, 0–9 and _, 3 to 20 characters.' : ''; };
+    let check = 0;
+    inp.oninput = () => {
+      this.claimDraft = inp.value; // survives the panel being redrawn
+      const n = normalizeName(inp.value), id = ++check;
+      msg.textContent = n && !validName(n) ? NAME_HINT + '.' : '';
+      if (!validName(n) || n === cur) return;
+      // say whether the name is free, once they pause typing
+      setTimeout(async () => {
+        if (id !== check) return;
+        const free = await isUsernameFree(n).catch(() => null);
+        if (id === check && free !== null) msg.textContent = free ? `@${n} is free` : `@${n} is taken, so try another`;
+      }, 400);
+    };
+    // offer a name nobody has yet (e.g. "sam.lee"), unless they have started typing
+    if (!cur && this.claimDraft == null) suggestUsername().then(n => { if (n && this.claimDraft == null && inp.isConnected && document.activeElement !== inp) inp.value = n; }).catch(() => {});
     const btn = $('#f-claim');
     const go = async () => {
-      btn.disabled = true; msg.textContent = 'Saving…';
+      check++; btn.disabled = true; msg.textContent = 'Saving…';
       const err = await claimUsername(inp.value);
       btn.disabled = false;
       if (err) { msg.textContent = err; return; }
+      this.claimDraft = null;
       this.ui.toast(`You're <b>@${esc(normalizeName(inp.value))}</b>`);
       this.ui.renderPanel(true);
     };
     btn.onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
-    if ($('#f-cancel')) $('#f-cancel').onclick = () => this.ui.renderPanel(true);
+    if ($('#f-cancel')) $('#f-cancel').onclick = () => { this.claimDraft = null; this.ui.renderPanel(true); };
   }
 
   renderHome(body) {
@@ -117,18 +135,19 @@ export class FriendsUI {
           : ahead ? `<p class="muted">@${esc(ahead.username)} is ${fmt((ahead.stats[m] || 0) - (rows[myRank - 1].stats[m] || 0), m)} ${METRICS.find(x => x[0] === m)[1].toLowerCase()} ahead of you. Tap a friend to compare.</p>`
           : `<p class="muted">🏆 You're in the lead! Tap a friend to compare.</p>`}
       </div>`;
-    this.prefill = '';
     $('#f-rename').onclick = () => this.renderClaim(body, true);
     const inp = $('#f-add');
     const send = async () => {
       const v = inp.value; if (!v.trim()) return;
       const b = $('#f-send'); if (b) b.disabled = true;
       this.msg = await sendRequest(v);
+      this.prefill = this.msg.ok ? '' : v;
       if (this.msg.ok) inp.value = '';
       this._dirty = false; inp.blur();
       this.ui.renderPanel();
     };
     $('#f-send').onclick = send; inp.onkeydown = e => { if (e.key === 'Enter') send(); };
+    inp.oninput = () => { this.prefill = inp.value; };
     inp.onblur = () => { if (this._dirty) { this._dirty = false; setTimeout(() => this.ui.renderPanel(), 0); } };
     $('#f-invite').onclick = () => this.share();
     $$('[data-accept]', body).forEach(b => b.onclick = async () => { b.disabled = true; const r = social.incoming.find(x => x.id === b.dataset.accept); try { await acceptRequest(r); this.ui.toast(`🎉 You're now friends with <b>@${esc(r.fromName)}</b>`); } catch (e) { this.ui.toast('Couldn’t accept: ' + esc(e.message)); b.disabled = false; } });
@@ -194,4 +213,4 @@ function cname(id) { return DATA.meta.countries[id]?.name || id; }
 function fmt(v, m) { v = v || 0; return m === 'world' ? (Math.round(v * 10) / 10) + '%' : String(Math.round(v)); }
 function hash(s) { let h = 7; for (const ch of s || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 function avatarStyle(name) { const hues = [205, 145, 45, 330, 270, 15, 175, 95]; return `background:hsl(${hues[hash(name) % hues.length]} 65% 45%)`; }
-function suggestName() { return normalizeName((cloud.user?.name || '').split(' ')[0]).replace(/[^a-z0-9_]/g, '').slice(0, 15); }
+function suggestName() { return normalizeName((cloud.user?.name || '').split(' ')[0]).replace(/[^a-z0-9_.]/g, '').slice(0, 15); }

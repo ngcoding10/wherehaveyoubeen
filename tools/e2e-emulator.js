@@ -96,6 +96,8 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     // ───── signed-out, no ?emulator: local-only, no Firebase traffic ─────
     {
       const context = await browser.newContext();
+      // Force the "no config" case whatever js/firebase-config.js holds, so this never touches the real project.
+      await context.route('**/js/firebase-config.js', r => r.fulfill({ contentType: 'application/javascript', body: 'export const firebaseConfig = null;\nexport const appCheckSiteKey = null;\n' }));
       const page = await context.newPage();
       const urls = [];
       page.on('request', r => urls.push(r.url()));

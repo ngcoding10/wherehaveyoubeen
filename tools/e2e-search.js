@@ -13,7 +13,10 @@ async function until(fn, ms = 10000) { const end = Date.now() + ms; for (;;) { t
 (async () => {
   const proxy = process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY, bypass: 'localhost,127.0.0.1' } : undefined;
   const browser = await chromium.launch({ proxy });
-  const page = await (await browser.newContext()).newPage();
+  const context = await browser.newContext();
+  // Search needs no backend: run signed-out with no config so the test never touches the real project.
+  await context.route('**/js/firebase-config.js', r => r.fulfill({ contentType: 'application/javascript', body: 'export const firebaseConfig = null;\nexport const appCheckSiteKey = null;\n' }));
+  const page = await context.newPage();
   const errors = [], online = [];
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::|WebGL|tile|glyph/i.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));

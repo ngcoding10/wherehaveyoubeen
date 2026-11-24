@@ -135,7 +135,11 @@ export async function claimUsername(raw) {
   if (!validName(name)) return NAME_HINT;
   const core = getCore(), { db, F } = core;
   try {
+    // Friends only ever see a first name here, so a new shared account gets the first name too
+    // (an existing account keeps whatever display name it already has).
+    const existing = await core.account.get();
     await core.account.claim(name, {
+      displayName: existing?.displayName ?? (cloud.user?.name || '').split(' ')[0].slice(0, 30),
       // our own profile goes in the same all-or-nothing batch as the account and the username
       async extra(batch) {
         const ref = F.doc(db, PROFILES, uid);

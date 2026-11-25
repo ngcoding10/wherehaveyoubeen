@@ -78,12 +78,13 @@ async function claim(page, name, { rename } = {}) {
   await page.waitForSelector('#f-name');
   await page.fill('#f-name', name);
   await page.click('#f-claim');
-  // resolves with '' on success (the claim form is gone) or the message shown
-  return until(async () => {
-    if (!(await page.$('#f-name'))) return 'OK';
-    const m = await page.textContent('#f-claim-msg');
+  // Resolves with 'OK' (the form is gone) or the message shown. One look at the page per try: looking for the
+  // form and then, in a second step, for its message used to hang for 30 s whenever the form closed in between.
+  return until(() => page.evaluate(() => {
+    if (!document.querySelector('#f-name')) return 'OK';
+    const m = document.querySelector('#f-claim-msg')?.textContent;
     return m && !/Saving|is free/.test(m) ? m : null;
-  });
+  }));
 }
 const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textContent.trim()));
 
@@ -187,6 +188,31 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     check('request is gone after accepting', (await doc(`whyb_requests/${uidA}_${uidB}`)) === null);
     const bStats = await until(async () => { const p = await doc(`whyb_profiles/${uidB}`); return p?.stats?.countries >= 1 ? p : null; });
     check('profile publish works (stats and visited, including cities)', !!bStats && Array.isArray((await doc(`whyb_profiles/${uidA}`))?.visited?.ci), JSON.stringify((await doc(`whyb_profiles/${uidA}`))?.visited?.ci));
+
+    // the rename form must stay open while friends' updates redraw the panel behind it (it used to be replaced by
+    // the friends list unless the cursor was in the box), and a save in flight cannot be started a second time
+    await friendsTab(A.page);
+    await A.page.click('#f-rename');
+    await A.page.waitForSelector('#f-name');
+    const emit = () => A.page.evaluate(() => import('/js/social.js').then(m => { m.social.dispatchEvent(new CustomEvent('change')); }));
+    await emit();
+    check('the rename form survives a background update before typing', !!(await A.page.$('#f-name')));
+    await A.page.fill('#f-name', nameA2);
+    await A.page.evaluate(() => document.activeElement.blur());
+    await emit();
+    check('the rename form keeps the typed name through a background update', (await A.page.$eval('#f-name', i => i.value).catch(() => null)) === nameA2);
+    await A.page.click('#f-cancel');
+    check('cancel closes the rename form', !(await A.page.$('#f-name')) && (await doc(`accounts/${uidA}`))?.username === nameA);
+    await A.page.click('#f-rename');
+    await A.page.fill('#f-name', nameA);
+    await A.page.focus('#f-name');
+    const dbl = await A.page.evaluate(async () => {
+      const { claimUsername } = await import('/js/social.js');
+      const inp = document.querySelector('#f-name');
+      return Promise.all([claimUsername(inp.value), claimUsername(inp.value)]);
+    });
+    check('two saves at once: one goes through, the other is turned away instead of racing it', dbl.filter(x => x === '').length === 1 && /Still saving/.test(dbl.join('|')), JSON.stringify(dbl));
+    await A.page.click('#f-cancel');
 
     // rename: the profile follows, friends see the new name
     const rRen = await claim(A.page, nameA2, { rename: true });

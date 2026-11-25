@@ -14,6 +14,9 @@ const SITE = location.origin + location.pathname.replace(/index\.html$/, '');
 export class FriendsUI {
   constructor(ui) {
     this.ui = ui; this.metric = 'countries'; this.compareWith = null; this.msg = null;
+    // the username form: open for a rename, what has been typed, saving, and the last message.
+    // Kept here (not in the page) so the form survives the panel being redrawn by a background update.
+    this.renaming = false; this.claimDraft = null; this.claimBusy = false; this.claimMsg = '';
     // invite links: …/?add=username (usernames may contain dots)
     const invite = normalizeName(new URLSearchParams(location.search).get('add') || '');
     this.pendingInvite = validName(invite) ? invite : '';
@@ -29,6 +32,7 @@ export class FriendsUI {
       if (name !== social.me?.username) { this.prefill = name; this.ui.setTab('friends'); this.ui.toast(`Tap <b>Send request</b> to add @${esc(name)} as a friend`, 4000); }
     }
     if (this.compareWith && !social.friends.has(this.compareWith)) this.exitCompare();
+    if (social.state === 'signed-out' || social.state === 'off') { this.renaming = false; this.claimDraft = null; this.claimMsg = ''; }
     if (this.ui.tab !== 'friends') return;
     // don't wipe what someone is typing
     const a = document.activeElement;
@@ -51,6 +55,7 @@ export class FriendsUI {
     if (st === 'loading') { body.innerHTML = `<p class="muted">Loading your friends…</p>`; return; }
     if (st === 'error') { body.innerHTML = `<div class="empty"><p>${esc(social.error)}</p></div>`; return; }
     if (st === 'need-username') return this.renderClaim(body);
+    if (this.renaming) return this.renderClaim(body, true);
     if (this.compareWith && social.friends.has(this.compareWith)) return this.renderCompare(body, social.friends.get(this.compareWith));
     this.renderHome(body);
   }
@@ -75,12 +80,14 @@ export class FriendsUI {
     body.innerHTML = `<div class="p-title"><h2>${changing ? 'Change your username' : 'Pick a username'}</h2></div>
       <p class="blurb">Friends add you by this name, and it is your username in every app you sign in to with this account. ${NAME_HINT}.</p>
       <div class="add-row"><span class="at">@</span><input class="filter-input" id="f-name" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="yourname" value="${esc(this.claimDraft ?? (cur || suggestName()))}">
-      <button class="pix-btn primary" id="f-claim">${changing ? 'Save' : 'Claim'}</button></div>
-      <p class="muted" id="f-claim-msg"></p>${changing ? `<button class="pix-btn small ghost" id="f-cancel">Cancel</button>` : ''}`;
+      <button class="pix-btn primary" id="f-claim" ${this.claimBusy ? 'disabled' : ''}>${changing ? 'Save' : 'Claim'}</button></div>
+      <p class="muted" id="f-claim-msg">${esc(this.claimBusy ? 'Saving…' : this.claimMsg)}</p>${changing ? `<button class="pix-btn small ghost" id="f-cancel">Cancel</button>` : ''}`;
     const inp = $('#f-name'), msg = $('#f-claim-msg');
     let check = 0;
     inp.oninput = () => {
       this.claimDraft = inp.value; // survives the panel being redrawn
+      this.claimMsg = '';
+      if (this.claimBusy) return;
       const n = normalizeName(inp.value), id = ++check;
       msg.textContent = n && !validName(n) ? NAME_HINT + '.' : '';
       if (!validName(n) || n === cur) return;
@@ -88,23 +95,32 @@ export class FriendsUI {
       setTimeout(async () => {
         if (id !== check) return;
         const free = await isUsernameFree(n).catch(() => null);
-        if (id === check && free !== null) msg.textContent = free ? `@${n} is free` : `@${n} is taken, so try another`;
+        if (id === check && !this.claimBusy && free !== null) msg.textContent = free ? `@${n} is free` : `@${n} is taken, so try another`;
       }, 400);
     };
     // offer a name nobody has yet (e.g. "sam.lee"), unless they have started typing
     if (!cur && this.claimDraft == null) suggestUsername().then(n => { if (n && this.claimDraft == null && inp.isConnected && document.activeElement !== inp) inp.value = n; }).catch(() => {});
     const btn = $('#f-claim');
     const go = async () => {
-      check++; btn.disabled = true; msg.textContent = 'Saving…';
-      const err = await claimUsername(inp.value);
-      btn.disabled = false;
-      if (err) { msg.textContent = err; return; }
-      this.claimDraft = null;
-      this.ui.toast(`You're <b>@${esc(normalizeName(inp.value))}</b>`);
-      this.ui.renderPanel(true);
+      if (this.claimBusy) return; // one save at a time (Enter pressed twice, or Enter then the button)
+      const typed = inp.value;
+      check++; this.claimBusy = true; this.claimMsg = ''; btn.disabled = true; msg.textContent = 'Saving…';
+      const err = await claimUsername(typed);
+      this.claimBusy = false;
+      if (err) {
+        // the panel may have been redrawn while saving, so write to the form that is on screen now
+        this.claimMsg = err;
+        const b = $('#f-claim'), m = $('#f-claim-msg');
+        if (b) b.disabled = false;
+        if (m) m.textContent = err;
+        return;
+      }
+      this.renaming = false; this.claimDraft = null;
+      this.ui.toast(`You're <b>@${esc(normalizeName(typed))}</b>`);
+      if (this.ui.tab === 'friends') this.ui.renderPanel(true);
     };
     btn.onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
-    if ($('#f-cancel')) $('#f-cancel').onclick = () => { this.claimDraft = null; this.ui.renderPanel(true); };
+    if ($('#f-cancel')) $('#f-cancel').onclick = () => { this.renaming = false; this.claimDraft = null; this.claimMsg = ''; this.ui.renderPanel(true); };
   }
 
   renderHome(body) {
@@ -142,7 +158,7 @@ export class FriendsUI {
           : ahead ? `<p class="muted">@${esc(ahead.username)} is ${fmt((ahead.stats[m] || 0) - (rows[myRank - 1].stats[m] || 0), m)} ${METRICS.find(x => x[0] === m)[1].toLowerCase()} ahead of you. Tap a friend to compare.</p>`
           : `<p class="muted">🏆 You're in the lead! Tap a friend to compare.</p>`}
       </div>`;
-    $('#f-rename').onclick = () => this.renderClaim(body, true);
+    $('#f-rename').onclick = () => { this.renaming = true; this.claimDraft = null; this.claimMsg = ''; this.ui.renderPanel(true); };
     const inp = $('#f-add');
     const send = async () => {
       const v = inp.value; if (!v.trim()) return;

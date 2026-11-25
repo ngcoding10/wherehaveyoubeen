@@ -130,10 +130,15 @@ export const isUsernameFree = name => getCore().account.isFree(name);
 export const suggestUsername = () => getCore().account.suggest(cloud.user?.name || cloud.user?.email || '');
 
 /** Claim (or change) your username. Returns an error message, or '' on success. */
+let claiming = false;
 export async function claimUsername(raw) {
   const name = normalizeName(raw);
   if (!validName(name)) return NAME_HINT;
+  // Two claims at once would race each other: the second reads the account before the first is saved
+  // and is then refused (or undoes it). One at a time.
+  if (claiming) return 'Still saving your username. Try again in a moment.';
   const core = getCore(), { db, F } = core;
+  claiming = true;
   try {
     // Friends only ever see a first name here, so a new shared account gets the first name too
     // (an existing account keeps whatever display name it already has).
@@ -151,6 +156,7 @@ export async function claimUsername(raw) {
     if (social.state !== 'ready') { await start(); } else { social.me = { ...social.me, username: name }; emit(); }
     return '';
   } catch (e) { console.warn(e); return e?.code ? friendlyError(e) : (e?.message || String(e)); }
+  finally { claiming = false; }
 }
 
 /** Send a friend request by username. Returns { ok, msg }. */

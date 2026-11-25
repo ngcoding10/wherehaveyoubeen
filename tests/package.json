@@ -1,9 +1,0 @@
-{
-  "private": true,
-  "description": "Dev-only tests for Where Have You Been (not used by the live site). See HANDOVER.md.",
-  "scripts": {
-    "test:rules": "cd .. && firebase emulators:exec --project where-have-you-been-f130a --only auth,firestore \"node tests/rules.test.mjs\"",
-    "test:friends": "cd .. && firebase emulators:exec --project where-have-you-been-f130a --only auth,firestore \"node tests/friends.e2e.cjs\""
-  },
-  "devDependencies": { "firebase": "^12.6.0", "firebase-tools": "^14.27.0", "playwright": "*" }
-}

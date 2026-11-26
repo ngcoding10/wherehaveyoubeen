@@ -220,7 +220,7 @@ export class UI {
   onStoreChange(keys) {
     this.map.refreshVisited();
     this.renderRibbon();
-    if (this._suppressPanel) { this._suppressPanel = false; this.updateExploreCounts(); return; }
+    if (this._suppressPanel) { this._suppressPanel = false; this.updateExploreCounts(); if (this.sel && this.map.popup?.isOpen()) this.refreshPopup(); return; }
     this.renderPanel();
     if (this.sel && this.map.popup?.isOpen()) this.refreshPopup();
     if (keys.includes('home') || keys.includes('*')) {

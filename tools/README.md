@@ -39,3 +39,18 @@ Start the emulators from the backend repo, serve this folder on port 8000, then 
 
 `e2e-search.js` checks that the search boxes and Quick add forgive typos ("madid", "madird" → Madrid).
 It needs no backend: serve this folder on port 8000 and run `node tools/e2e-search.js`.
+
+# Landmarks, their cities and the city sights
+
+- `landmark_places.py` attaches every curated wonder in `js/landmarks.js` to the city it is in (GeoNames id)
+  and its state/region, and writes `js/landmark-places.js`. Matches were checked by hand; the overrides are
+  at the top of the script. Run it again after adding a wonder.
+- `build_sights.py` makes `data/sights.json`, the extra landmarks ("city sights") for the most-visited
+  cities, from Wikidata: `python3 tools/build_sights.py fetch WORKDIR` downloads candidates (slow: the public
+  query servers allow about one query a minute), `python3 tools/build_sights.py build WORKDIR` applies the
+  rules and the hand-checked lists in the script. Sight ids end up in people's logbooks (`l:<id>`), so an id
+  that has been published must never be renamed or removed.
+
+`e2e-landmarks.js` checks that ticking a landmark logs its city and country, un-ticking, the city checklist
+and the "which cities?" step after stamping a country at phone size. Serve this folder on port 8000 and run
+`node tools/e2e-landmarks.js` (`SHOTS=dir` also saves screenshots).

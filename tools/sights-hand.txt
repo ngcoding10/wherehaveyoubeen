@@ -1,0 +1,350 @@
+# Hand checks for tools/build_sights.py. One Wikidata item per line:
+#   Qid keep <sprite>   a sight the rules miss (vague description), with its pixel icon
+#   Qid drop            the rules keep it, but it is not something visitors go to see (or not in that city)
+#   Qid name <name>     the English name visitors use, where the Wikidata label is odd
+#   Qid city <geonameId> it is in that city (when the nearest centre is the wrong one)
+#   Qid blurb <text>    a better one-line description than the Wikidata one
+# ── Europe ──
+Q68689 keep gate        # Checkpoint Charlie, Berlin
+Q686548 keep palace     # Munich Residence
+Q36749 drop             # Beer Hall Putsch (an event)
+Q374591 drop            # Farnese Hercules (a statue inside a museum)
+Q208811 keep stadium    # Panathenaic Stadium, Athens
+Q193093 drop            # Platonic Academy site, Athens
+Q732511 keep cathedral  # Florence Baptistery
+Q1144592 drop           # Belém Palace (president's office)
+Q1464499 drop           # São Bento Palace (parliament)
+Q188190 drop            # Élysée Palace (president's office, not open)
+Q188977 keep museum     # Les Invalides
+Q151030 keep opera      # Moulin Rouge
+Q193193 name Sainte-Chapelle
+Q1367970 drop           # Palace of Moncloa (PM's residence)
+Q1123493 name Plaza Mayor
+Q164027 keep stadium    # Santiago Bernabéu
+Q164027 name Santiago Bernabéu Stadium
+Q807915 drop            # German Pavilion
+Q336246 drop            # Torre Glòries
+Q212867 keep tree       # Park Güell
+Q207870 keep palace     # Casa Milà (La Pedrera)
+Q850593 keep street     # La Rambla
+Q1122701 keep mountain  # Montjuïc
+Q658271 keep mountain   # Tibidabo
+Q729370 keep tower      # Prague Astronomical Clock
+Q213322 keep museum     # Victoria and Albert Museum
+Q258464 keep museum     # Trinity College (Book of Kells)
+Q258464 name Trinity College & Book of Kells
+Q261012 keep museum     # Guinness Storehouse
+Q712311 keep mountain   # Arthur's Seat
+Q943946 keep street     # Nyhavn
+Q5786 keep arch         # Arch of Constantine
+Q463400 keep fountain   # Piazza Navona
+Q821009 drop            # Berlaymont (EU offices)
+Q1542585 drop           # Royal Castle of Laeken (private residence)
+Q525297 drop            # Piazzale Loreto
+Q608346 drop            # Presidential Palace, Helsinki
+Q31204 drop             # St Henry's Cathedral (small)
+Q451045 name Parliament House
+Q927806 drop            # Sándor Palace (president's office)
+Q1457419 drop           # Rakowicki Cemetery
+Q377904 drop            # Polish Aviation Museum
+Q770631 name Main Market Square
+Q186115 drop            # Montmartre (district; Sacré-Cœur is listed)
+Q193193 keep cathedral  # Sainte-Chapelle
+Q17155 name Barcelona Cathedral
+Q4670 drop              # Moscow theatre hostage crisis (an event)
+Q59493657 drop          # Orthodox Church of Ukraine (an institution)
+Q242758 drop            # Bulgarian Orthodox Church (an institution)
+Q171406 drop            # Valencia Street Circuit
+Q1353494 drop           # Alamillo bridge
+Q508362 drop            # Nice Observatory
+Q1103949 drop           # Marseille Observatory
+Q2566850 drop           # Massalia (the ancient city)
+Q1857046 drop           # Terra Amata (prehistoric site, nothing to see)
+Q666565 drop            # Fluntern Cemetery
+Q666984 drop            # Hallenstadion
+Q4270926 drop           # Court of the Lions (inside the Alhambra wonder)
+Q5270 drop              # Tour Part-Dieu
+Q8656 drop              # La Croix-Rousse (district)
+Q477051 keep museum     # General Archive of the Indies, Seville
+Q239935 keep museum     # City of Arts and Sciences, Valencia
+Q382500 keep street     # Nevsky Prospect
+Q168713 keep museum     # cruiser Aurora
+Q168713 name Cruiser Aurora
+Q652464 keep palace     # Kolomenskoye
+Q1420569 keep tower     # Pikk Hermann
+Q7722735 keep palace    # Kadriorg Palace
+Q919611 keep museum     # Kumu
+Q142917 keep statue     # Mother Ukraine
+Q5419362 keep cathedral # Granada Cathedral
+Q5419362 name Granada Cathedral
+Q498261 name Alcázar of Seville
+Q359185 name Admiralty
+Q1378149 name St. Salvator's Cathedral
+Q522604 name Basilica of the Holy Blood
+Q1265856 drop           # San Vittore Observatory
+Q945030 drop            # Coronation Street (a TV soap)
+Q311444 drop            # Al-Rahma Mosque
+Q338245 drop            # Žale Cemetery
+Q1053000 drop           # Vatican Hill
+Q947985 drop            # Strasbourg Observatory
+Q2066160 drop           # Radcliffe Observatory
+Q1316358 drop           # Bordeaux synagogue
+Q1546813 drop           # Grimaldi Forum
+Q12184921 drop          # Museum Jorge Rando
+Q34925 drop             # Capitoline Hill (the Capitoline Museums are listed)
+Q841506 keep museum     # Galleria Borghese
+Q333906 keep museum     # Capitoline Museums
+Q661881 keep museum     # Speicherstadt
+Q1582758 name Málaga Cathedral
+Q1784719 name Piazza dei Cavalieri
+Q12034073 name Plečnik's Market
+Q745460 name Strasbourg Cathedral
+Q613201 name Nikola Tesla Museum
+Q851527 name Oceanographic Museum
+Q1323117 drop           # English Football Hall of Fame (inside the National Football Museum)
+Q2444574 drop           # Abbey Stadium
+Q1965699 drop           # Cambridge Observatory
+Q16830778 drop          # Cambridge Mosque
+Q5025375 drop           # Cambridge Castle (a mound)
+Q97625652 name Roman Bridge of Córdoba
+Q28221700 drop          # Al-Morabito Mosque
+# ── Asia ──
+Q1502138 drop           # Emerald Buddha (inside Wat Phra Kaew)
+Q2529957 name Wat Traimit (Golden Buddha)
+Q1972305 drop           # Sukhumvit Road
+Q171390 drop            # Marina Bay Street Circuit
+Q720209 drop            # Bukit Timah (district)
+Q6819812 drop           # Merlion Park (the Merlion is listed)
+Q1674107 drop           # Estádio Campo Desportivo
+Q977841 drop            # Governor Nobre de Carvalho Bridge
+Q838085 name Monte Fort
+Q1106554 name Macau Cathedral
+Q24192494 drop          # Dubai Creek Tower (never built)
+Q623517 drop            # Millennium Tower, Dubai
+Q1337822 drop           # E 311 road
+Q1614219 drop           # Vision Tower
+Q1686861 drop           # Lighthouse Tower
+Q5570759 keep market    # Global Village, Dubai
+Q1067672 keep mountain  # Ski Dubai
+Q1735111 drop           # The Landmark (office tower)
+Q290435 drop            # ADNOC Headquarters
+Q615950 drop            # Central Market Project
+Q46850596 drop          # Mary, Mother of Jesus Mosque
+Q118214 drop            # Telekom Tower
+Q820738 drop            # Berjaya Times Square (mall)
+Q3396984 drop           # As Syakirin Mosque
+Q1030463 drop           # Mode Gakuen Cocoon Tower (a college)
+Q865913 drop            # Edo Castle (the Imperial Palace is listed)
+Q1710283 drop           # Tokyo Mosque
+Q874027 drop            # Historic Monuments of Ancient Kyoto (a group listing)
+Q304501 drop            # Heian Palace (gone)
+Q494832 drop            # Yanmar Stadium Nagai
+Q850547 drop            # Gate Tower Building
+Q485338 drop            # Yoido Full Gospel Church
+Q496515 drop            # Seoul Central Mosque
+Q490777 drop            # Diamond Tower, Busan
+Q5638300 drop           # Haeundae I Park (apartments)
+Q496218 drop            # Busan Lotte World Tower
+Q717882 drop            # Taipei Grand Mosque
+Q1161278 drop           # Shimao International Plaza
+Q197889 drop            # Zhongnanhai (closed government compound)
+Q754321 name CCTV Headquarters
+Q220083 keep tree       # Beijing Zoo
+Q16396 drop             # Tsing Ma Bridge
+Q2326446 drop           # Kowloon Mosque
+Q4022264 drop           # Jamia Mosque, Hong Kong
+Q835407 drop            # Lion Rock
+Q782876 keep street     # Avenue of Stars
+Q1116359 keep temple    # Wong Tai Sin Temple
+Q2180716 keep pagoda    # Chi Lin Nunnery
+Q692288 keep tower      # Clock Tower, Tsim Sha Tsui
+Q692288 name Tsim Sha Tsui Clock Tower
+Q692288 blurb Clock tower of the old Kowloon–Canton Railway terminus.
+Q244816 keep museum     # Dancing House, Prague
+Q461371 keep palace     # Casa Batlló
+Q493126 keep palace     # Hundertwasserhaus
+Q1192865 drop           # Xuanwu Gate Incident (an event)
+Q1073538 drop           # Epang Palace (site)
+Q864849 drop            # Jawaharlal Nehru Stadium
+Q576952 drop            # Antilia (a private house)
+Q2303685 drop           # Oberoi Trident (hotel)
+Q649218 drop            # India Tower (never built)
+Q507939 drop            # Lodha World One
+Q628478 drop            # Madras Observatory
+Q7585638 drop           # Sree Kanteerava Stadium
+Q609140 drop            # Hanoi Landmark Tower
+Q4022414 drop           # Ban Ho Mosque
+Q4818120 drop           # Attaqwa Mosque
+Q7289168 drop           # Rambagh Palace (hotel)
+Q16829867 drop          # Diwan-i-Khas (inside Agra Fort)
+Q4179295 drop           # Moti Masjid (inside Agra Fort)
+Q6958835 drop           # Nagina Masjid (inside Agra Fort)
+Q2991448 drop           # Moti Masjid (inside the Red Fort)
+Q19745990 drop          # Holy Spirit Cathedral, Denpasar
+Q6127147 name Jama Masjid, Agra
+Q2723395 name City Palace, Jaipur
+Q249319 drop            # Pearl River Tower (offices)
+Q589779 drop            # Leatop Plaza (offices)
+Q168575 drop            # CTF Finance Centre (offices)
+Q236201 drop            # Shun Hing Square (offices)
+Q2278111 drop           # Chang Fu Jin Mao Tower (offices)
+Q572970 drop            # Shenzhen Special Zone Press Tower
+Q18589922 drop          # Chengdu Greenland Tower
+Q2495649 keep street    # Walking Street, Pattaya
+Q808563 drop            # Baroque Churches of the Philippines (a group listing)
+Q1642472 drop           # Tondo (district)
+Q685133 drop            # Manila North Cemetery
+Q1417648 drop           # Masjid Al-Dahab
+Q10413351 drop          # Doha Tower (offices)
+Q1207442 drop           # Dubai Towers Doha (offices)
+Q3057368 drop           # Islamic Cultural Center, Doha
+Q12242846 name State Grand Mosque
+Q13892708 drop          # Capital Market Authority HQ
+Q4165313 drop           # Al Oud cemetery
+Q2916616 drop           # terror victims memorial
+Q85786042 drop          # Mohammed Al Ameen Mosque (outside central Muscat)
+Q423625 drop            # Ayn Ghazal (excavation site)
+Q486080 drop            # Prophet's Mosque (already the wonder Al-Masjid an-Nabawi)
+Q7144236 drop           # Patan Durbar Square (in Lalitpur, not Kathmandu)
+Q3457358 drop           # Singha Durbar (government offices)
+Q6122177 name Kathmandu Durbar Square
+Q3390317 name Independence Square
+Q420618 name Royal Palace, Phnom Penh
+# ── Africa ──
+Q683511 city 360630     # Mosque of Amr ibn al-As: Old Cairo, not Giza
+Q2421968 city 360630    # Babylon Fortress: Coptic Cairo
+Q2422298 city 360630    # Hanging Church: Coptic Cairo
+Q1784177 city 360630    # Coptic Museum: Coptic Cairo
+Q2474653 city 360630    # Ben Ezra Synagogue: Coptic Cairo
+Q368138 drop            # Narmer Palette (an object in a museum)
+Q778902 drop            # KV1 (tomb inside the Valley of the Kings)
+Q1347523 drop           # KV2
+Q1348082 drop           # KV5
+Q589651 drop            # KV3
+Q122146423 drop         # 80 Albert Street fire (an event)
+Q2564753 drop           # Union Observatory
+Q976172 drop            # Carlton Centre (offices)
+Q1812844 drop           # Ponte City Apartments
+Q15845487 drop          # small mosques, Fes
+Q48852373 drop
+Q85757201 drop
+Q85740372 drop
+Q117188267 drop         # small mosques, Casablanca
+Q60572928 drop
+Q94462710 drop
+Q28223286 drop          # Britam Tower (offices)
+Q227807 drop            # South African Astronomical Observatory
+# ── Asia (more) ──
+Q10752400 drop          # Han River Bridge, Da Nang
+Q7798648 drop           # Thuận Phước Bridge
+Q7833322 drop           # Tran Thi Ly Bridge
+Q1055749 drop           # Historic Monuments of Ancient Nara (a group listing)
+Q3438824 city 360630    # Coptic Cairo
+Q4255568 city 360630    # Church of St. George, Coptic Cairo
+Q2965718 city 360630    # Saints Sergius and Bacchus, Coptic Cairo
+# ── Africa (more) ──
+Q501851 keep museum     # Bibliotheca Alexandrina
+Q1938065 keep castle    # Citadel of Qaitbay
+Q251268 drop            # Greek Orthodox Patriarchate (an institution)
+Q29297504 drop          # Palm Sunday church bombings (an event)
+Q19613356 drop          # Bardo National Museum attack (an event)
+Q27978301 drop          # Mosque of Laz
+Q109351227 drop         # 360 Degrees Tower collapse (an event)
+Q15238423 drop          # Kigali City Tower (offices)
+# ── Americas ──
+Q11259 keep fountain    # Times Square
+Q11274 keep skyscraper  # Chrysler Building
+Q11245 keep skyscraper  # One World Trade Center
+Q11277 keep palace      # Rockefeller Center
+Q1136137 keep statue    # National September 11 Memorial
+Q220728 keep skyscraper # Flatiron Building
+Q109858 keep street     # Fifth Avenue
+Q125673 drop            # Verrazzano-Narrows Bridge
+Q235065 drop            # Broadway theatre (the art form)
+Q239303 keep museum     # Art Institute of Chicago
+Q589099 keep statue     # Cloud Gate
+Q3337338 keep street    # Navy Pier
+Q1052807 keep stadium   # Wrigley Field
+Q217727 name John Hancock Center
+Q1121971 drop           # Two Prudential Plaza (offices)
+Q271695 drop            # Aon Center, Chicago (offices)
+Q224563 drop            # 311 South Wacker Drive (offices)
+Q291304 drop            # Chase Tower (offices)
+Q15975388 drop          # Obama Presidential Center (unfinished)
+Q390306 keep museum     # Liberty Bell
+Q1138183 keep palace    # Philadelphia City Hall
+Q1113808 drop           # Comcast Center (offices)
+Q1190282 drop           # Independence National Historical Park (Independence Hall is listed)
+Q57900 drop             # U.S. Bank Tower (offices)
+Q607743 drop            # Aon Center, Los Angeles (offices)
+Q861660 drop            # Songwriters Hall of Fame (no building)
+Q1302545 drop           # Forest Lawn
+Q243921 drop            # 555 California Street (offices)
+Q570043 drop            # Folsom Street Fair (an event)
+Q1416890 drop           # Fine Arts Museums of SF (the de Young is listed)
+Q2301069 drop           # 1201 Third Avenue (offices)
+Q79957364 drop          # mystery soda machine
+Q3500752 drop           # Lake Washington Ship Canal
+Q1368138 drop           # LoanDepot Park
+Q806676 drop            # Miami Tower (offices)
+Q944686 drop            # Diamond Head (already a wonder)
+Q1281206 drop           # First Hawaiian Center (offices)
+Q28868 drop             # Hancock Whitney Center (offices)
+Q1052475 drop           # First Canadian Place (offices)
+Q164877 drop            # 1000 de La Gauchetière (offices)
+Q173454 drop            # 1250 René-Lévesque (offices)
+Q28549976 drop          # Quebec City mosque shooting (an event)
+Q5853834 drop           # F&F Tower (offices)
+Q2444561 drop           # Vitri Tower (flats)
+Q42258 drop             # Mirante do Vale (offices)
+Q1362236 drop           # Neo Química Arena
+Q1075303 drop           # Octávio Frias de Oliveira Bridge
+Q169420 name Farol Santander (Altino Arantes Building)
+Q3022918 drop           # As-Salam Mosque, Santiago
+Q3120855 drop           # Torre Colpatria (offices)
+Q108532501 drop         # mosque, Bogotá
+Q6772971 drop           # Marriott's Grand Chateau (hotel)
+Q6058329 drop           # Palace of the Revolution (government)
+Q54490 drop             # Chifley Tower (offices)
+Q54491 drop             # Citigroup Centre (offices)
+Q171288 drop            # Albert Park Circuit
+Q4631224 drop           # Brisbane Skytower (flats)
+Q6030049 drop           # Infinity Tower (flats)
+Q2585611 drop           # Central Park, Perth (offices)
+Q7170875 drop           # Perth Mosque
+Q53590824 drop          # Casa Grande del Pueblo (government)
+Q5116751 name Church of San Francisco, Quito
+Q873769 drop            # Grand Palace, Bangkok (already a wonder)
+Q838479 drop            # Pyramid of Khentkaus I
+Q994471 blurb 16th-century fountain by Giambologna on Piazza del Nettuno.
+Q667450 blurb Monaco's cathedral, where Grace Kelly is buried.
+# ── office and apartment towers the rules let through (no viewing deck or not a sight) ──
+Q27670200 drop          # The Exchange 106
+Q1756313 drop           # Vasco da Gama Tower (hotel)
+Q8530 drop              # Tour Oxygène
+Q156198 drop            # Messeturm
+Q1640197 drop           # King Power Mahanakhon
+Q333305 drop            # One Raffles Place
+Q1435741 drop           # Sky Tower, Abu Dhabi
+Q15464762 drop          # Busan International Finance Center
+Q704778 drop            # Shin Kong Life Tower
+Q245246 drop            # CITIC Plaza
+Q1470046 drop           # Kingkey 100
+Q620809 drop            # Palais Royale (unfinished flats)
+Q1128296 drop           # Doha Convention Center Tower
+Q1854423 drop           # Marquis Residences
+Q638403 drop            # Chicago Spire (never built)
+Q798416 drop            # John Hancock Tower, Boston (offices)
+Q1785026 drop           # Living Shangri-La
+Q172402 drop            # 120 Collins Street
+Q597184 drop            # Riparian Plaza
+Q1563940 drop           # Hillbrow Tower (closed)
+Q1151087 name Bell Tower of Xi'an
+Q1151087 blurb Ming-dynasty bell tower at the centre of Xi'an.
+Q162877 drop            # 1929 cycling championships (an event)
+Q647585 drop            # Jumeirah Beach Hotel
+Q4547246 drop           # 1101 Brickell (offices)
+# ── found in the 50-item spot check ──
+Q105070555 drop         # Feast of the Black Nazarene (a festival)
+Q165506 drop            # 101 Collins Street (offices)
+Q2518305 blurb Theatre in Bogotá, Colombia.

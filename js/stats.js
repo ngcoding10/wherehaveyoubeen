@@ -1,6 +1,7 @@
 // Shared stats so the panel, the ribbon and your friends' leaderboard all count the same way.
 import { store } from './store.js';
 import { DATA, UN195, haversine } from './data.js';
+import { isWonder } from './landmarks.js';
 
 export const CONTINENTS = ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Antarctica'];
 
@@ -21,7 +22,9 @@ export function computeStats() {
   if (store.home) for (const [, c] of store.cities()) { const d = haversine(store.home.lat, store.home.lon, c.lat, c.lon); if (!far || d > far.d) far = { n: c.n, d }; }
   return {
     un: cs.filter(id => UN195.has(id)).length, terr: cs.filter(id => !UN195.has(id)).length,
-    states: store.visitedStates().length, cities: store.cities().length, lms: store.landmarks().length,
+    states: store.visitedStates().length, cities: store.cities().length,
+    // wonders = the curated collection only; city sights are counted on their own
+    lms: store.landmarks().filter(isWonder).length, sights: store.landmarks().filter(id => !isWonder(id)).length,
     pctWorld: totalArea ? (area / totalArea) * 100 : 0, byCont, conts, far,
   };
 }

@@ -1,6 +1,10 @@
 // Logbook store: every visited place is an item keyed by type, with a timestamp.
 // Removals are kept as tombstones so two devices can merge without resurrecting deleted places.
 //   c:<countryId>   s:<stateId>   ci:<geonameId>   l:<landmarkId>
+// Item fields besides t/m/d/note: cities keep n,c,s,lat,lon,p; landmarks keep c,s,ci (their country, state
+// and city) and n for city sights; a:1 marks a city/state/country that was logged automatically because a
+// landmark inside it was ticked (un-ticking that landmark can take it away again, see removeLandmark);
+// g:1 on a country means the "which cities?" step was already offered for it.
 const LS_KEY = 'whyb.logbook.v1';
 const LS_SETTINGS = 'whyb.settings.v1';
 
@@ -30,7 +34,8 @@ class Store extends EventTarget {
     const saved = { ...(s.colors || {}) };
     for (const k of Object.keys(OLD_DEFAULT_COLORS)) if ((saved[k] || '').toLowerCase() === OLD_DEFAULT_COLORS[k]) delete saved[k];
     this.settings = { ...DEFAULT_SETTINGS, ...s, colors: { ...DEFAULT_SETTINGS.colors, ...saved } };
-    this.resolve = { stateCountry: () => null, landmarkCountry: () => null };
+    // filled in by main.js once the data is loaded. landmarkPlace(id) → {c, s, ci} for a landmark's country/state/city
+    this.resolve = { stateCountry: () => null, landmarkCountry: () => null, landmarkPlace: () => null };
     this._derived = null;
   }
   // ---- queries ----
@@ -54,7 +59,12 @@ class Store extends EventTarget {
       if (c.c && !countries.has(c.c)) impliedCountries.add(c.c);
     }
     for (const sid of [...states, ...impliedStates]) { const cid = this.resolve.stateCountry(sid); if (cid && !countries.has(cid)) impliedCountries.add(cid); }
-    for (const lid of this.landmarks()) { const cid = this.resolve.landmarkCountry(lid); if (cid && !countries.has(cid)) impliedCountries.add(cid); }
+    for (const lid of this.landmarks()) {
+      const p = this.landmarkPlace(lid);
+      if (p.s && !states.has(p.s)) impliedStates.add(p.s);
+      const cid = p.c || (p.s && this.resolve.stateCountry(p.s));
+      if (cid && !countries.has(cid)) impliedCountries.add(cid);
+    }
     return (this._derived = { states: [...states, ...impliedStates], countries: [...countries, ...impliedCountries], impliedStates, impliedCountries });
   }
   visitedStates() { return this.derived().states; }
@@ -67,6 +77,11 @@ class Store extends EventTarget {
     return false;
   }
   isImpliedOnly(key) { return !this.has(key) && this.isVisited(key); }
+  /** Where a logged landmark is: {c, s, ci}. From the item itself, else from the landmark data. */
+  landmarkPlace(lid) {
+    const it = this.book.items['l:' + lid] || {}, r = this.resolve.landmarkPlace(lid) || {};
+    return { c: it.c || r.c || this.resolve.landmarkCountry(lid) || '', s: it.s ?? r.s ?? '', ci: it.ci ?? r.ci ?? 0 };
+  }
 
   // ---- wishlist: same keys as the logbook, prefixed with "w:" (e.g. "w:c:JP", "w:ci:1850147") ----
   wishEntries() { return this.entries('w:'); }               // [[innerKey, data]]
@@ -90,21 +105,60 @@ class Store extends EventTarget {
     this.book.removed[key] = Date.now();
     if (!silent) this._changed([key]);
   }
-  toggle(key, data, parents = []) {
+  /** auto: parents added now get a:1, so un-ticking a landmark can take them away again. this.lastAdded = parents added. */
+  toggle(key, data, parents = [], { auto } = {}) {
+    this.lastAdded = [];
     if (this.has(key)) { this.remove(key); return false; }
     this.set(key, data, { silent: true });
     const changed = [key];
     if (this.settings.autoParents) {
-      for (const [pk, pdata] of parents) if (pk && !this.has(pk)) { this.set(pk, pdata || {}, { silent: true }); changed.push(pk); }
+      for (const [pk, pdata] of parents) if (pk && !this.has(pk)) {
+        this.set(pk, { ...(pdata || {}), ...(auto ? { a: 1 } : {}) }, { silent: true }); changed.push(pk); this.lastAdded.push(pk);
+      }
     }
     this._changed(changed);
     return true;
+  }
+  /** The person logged this themselves (Quick add, the city step…): it no longer counts as added automatically. */
+  adopt(key, { silent } = {}) {
+    const it = this.book.items[key];
+    if (!it?.a) return false;
+    delete it.a; it.m = Date.now();
+    if (!silent) this._changed([key]);
+    return true;
+  }
+  /**
+   * Un-tick a landmark. Its city, state and country go too, but only if they were logged automatically for a
+   * landmark (a:1), have no date or note, and nothing else logged is inside them. Anything the person logged
+   * themselves always stays. Returns {removed: [parent keys removed], kept: [parent keys still logged]}.
+   */
+  removeLandmark(key) {
+    const res = { removed: [], kept: [] };
+    if (!this.has(key)) return res;
+    const { c, s, ci } = this.landmarkPlace(key.slice(2));
+    this.remove(key, { silent: true });
+    const auto = k => { const v = this.book.items[k]; return v && v.a && !v.d && !v.note; };
+    const lms = () => this.landmarks().map(id => this.landmarkPlace(id));
+    const drop = k => { this.remove(k, { silent: true }); res.removed.push(k); };
+    if (ci && this.has('ci:' + ci)) {
+      if (auto('ci:' + ci) && !lms().some(p => +p.ci === +ci)) drop('ci:' + ci); else res.kept.push('ci:' + ci);
+    }
+    if (s && this.has('s:' + s)) {
+      if (auto('s:' + s) && !this.cities().some(([, v]) => v.s === s) && !lms().some(p => p.s === s)) drop('s:' + s); else res.kept.push('s:' + s);
+    }
+    if (c && this.has('c:' + c)) {
+      const inside = this.cities().some(([, v]) => v.c === c) || this.states().some(sid => this.resolve.stateCountry(sid) === c) || lms().some(p => p.c === c);
+      if (auto('c:' + c) && !inside) drop('c:' + c); else res.kept.push('c:' + c);
+    }
+    this._changed([key, ...res.removed]);
+    return res;
   }
   /** Add many places at once (never removes). entries: [[key, data, parents]] → number newly added */
   addMany(entries) {
     const changed = [];
     for (const [key, data, parents = []] of entries) {
       if (!this.has(key)) { this.set(key, data, { silent: true }); changed.push(key); }
+      else if (this.adopt(key, { silent: true })) changed.push(key);
       if (this.settings.autoParents) for (const [pk, pdata] of parents) if (pk && !this.has(pk)) { this.set(pk, pdata || {}, { silent: true }); changed.push(pk); }
     }
     if (changed.length) this._changed(changed);

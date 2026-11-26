@@ -4,9 +4,9 @@
 // Indexes are built the first time they are needed, never at startup.
 import { createFuzzyIndex, foldText, editDistance, wordScore } from './fuzzy.js';
 import { DATA, loadCityIndex } from './data.js';
-import { LANDMARKS } from './landmarks.js';
+import { allLandmarks } from './landmarks.js';
 
-let countries = null, states = null, landmarks = null, cities = null;
+let countries = null, states = null, landmarks = null, cities = null, landmarksN = 0;
 
 /** Items are [id, country] pairs from DATA.meta.countries. */
 export function fuzzyCountries() {
@@ -17,7 +17,9 @@ export function fuzzyStates() {
   return states ||= createFuzzyIndex(Object.entries(DATA.meta.states), ([, s]) => s.name, { weight: ([, s]) => DATA.meta.countries[s.cid]?.pop || 0 });
 }
 export function fuzzyLandmarks() {
-  return landmarks ||= createFuzzyIndex(LANDMARKS, l => l.name);
+  const all = allLandmarks();   // rebuilt once the city sights arrive
+  if (!landmarks || landmarksN !== all.length) { landmarks = createFuzzyIndex(all, l => l.name); landmarksN = all.length; }
+  return landmarks;
 }
 /** The global city list (every city of 15,000+ people); items are its rows [gid, name, cid, lat, lon, pop, stateName]. Bigger cities first. */
 export async function fuzzyCities() {

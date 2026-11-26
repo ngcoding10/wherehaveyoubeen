@@ -1,4 +1,6 @@
-// Curated world landmarks. [id, name, country, lat, lon, sprite, category, blurb]
+import { LANDMARK_PLACES } from './landmark-places.js';
+// Curated world landmarks ("wonders"). [id, name, country, lat, lon, sprite, category, blurb]
+// Ids are stored in people's logbooks as l:<id>: never rename or remove one.
 // Categories: W New 7 Wonders · A Ancient Wonders (sites) · N Natural Wonders ·
 //             I Icons & Monuments · S Sacred Sites · R Ruins & History · F Forests & Wild Places
 export const CATEGORIES = {
@@ -501,5 +503,49 @@ const RAW = [
 const CAT_RANK = { W: 0, A: 1, N: 2, I: 2, S: 3, R: 3, F: 3 };
 export const LANDMARKS = RAW.map(([id, name, cc, lat, lon, sprite, cat, blurb], i) => ({
   id, name, cc, lat, lon, sprite, cat, blurb, rank: CAT_RANK[cat] * 1000 + i,
+  gid: LANDMARK_PLACES[id]?.[0] || 0, sid: LANDMARK_PLACES[id]?.[1] || '',   // city (GeoNames id) and state it is in
 }));
 export const LANDMARK_BY_ID = Object.fromEntries(LANDMARKS.map(l => [l.id, l]));
+
+// ── City sights ──
+// Extra landmarks for the most-visited cities (data/sights.json, built by tools/build_sights.py from Wikidata).
+// They are logged like wonders (l:<id>) but are not wonders: the Wonders collection and its counts stay the
+// curated list above. Loaded after the map is up; everything that lists them waits for loadSights().
+// Row: [id, name, country, lat, lon, sprite, city GeoNames id, state id, blurb]
+export const SIGHT_LABEL = 'City Sight';
+export const SIGHTS = [];
+export const SIGHT_BY_ID = {};
+let sightsPromise = null, sightsDone = false;
+const byCity = new Map(), byCountry = new Map();
+function index() {
+  byCity.clear(); byCountry.clear();
+  for (const l of [...LANDMARKS, ...SIGHTS]) {
+    if (l.gid) { if (!byCity.has(l.gid)) byCity.set(l.gid, []); byCity.get(l.gid).push(l); }
+    if (!byCountry.has(l.cc)) byCountry.set(l.cc, []);
+    byCountry.get(l.cc).push(l);
+  }
+}
+index();
+export function loadSights() {
+  if (!sightsPromise) sightsPromise = fetch('data/sights.json').then(r => { if (!r.ok) throw new Error('sights ' + r.status); return r.json(); })
+    .then(rows => {
+      rows.forEach(([id, name, cc, lat, lon, sprite, gid, sid, blurb], i) => {
+        if (LANDMARK_BY_ID[id] || SIGHT_BY_ID[id]) return;
+        const l = { id, name, cc, lat, lon, sprite, cat: 'C', blurb, gid, sid, sight: true, rank: 10000 + i };
+        SIGHTS.push(l); SIGHT_BY_ID[id] = l;
+      });
+      index(); sightsDone = true;
+      return SIGHTS;
+    }).catch(e => { sightsPromise = null; throw e; });
+  return sightsPromise;
+}
+export const sightsLoaded = () => sightsDone;
+/** Wonders, plus the city sights once they have loaded. */
+export const allLandmarks = () => SIGHTS.length ? [...LANDMARKS, ...SIGHTS] : LANDMARKS;
+/** Any landmark, wonder or city sight (sights only once loaded). */
+export const lmById = id => LANDMARK_BY_ID[id] || SIGHT_BY_ID[id];
+export const isWonder = id => !!LANDMARK_BY_ID[id];
+export const catName = l => l.sight ? SIGHT_LABEL : CATEGORIES[l.cat];
+/** Wonders first, then sights by how well known they are. */
+export const cityLandmarks = gid => byCity.get(+gid) || [];
+export const countryLandmarks = cc => byCountry.get(cc) || [];

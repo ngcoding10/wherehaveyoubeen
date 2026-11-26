@@ -5,7 +5,7 @@ import { initCloud } from './cloud.js';
 import { renderIcon } from './sprites.js';
 import { store } from './store.js';
 import { DATA } from './data.js';
-import { LANDMARK_BY_ID } from './landmarks.js';
+import { lmById, loadSights } from './landmarks.js';
 
 const bar = document.getElementById('boot-progress');
 const msg = document.getElementById('boot-msg');
@@ -18,7 +18,11 @@ const step = (pct, text) => { bar.style.width = pct + '%'; if (text) msg.textCon
     if (!window.maplibregl) throw new Error('Map engine failed to load');
     step(15, 'Unfolding the map…');
     await loadCore();
-    store.resolve = { stateCountry: sid => DATA.meta.states[sid]?.cid, landmarkCountry: lid => LANDMARK_BY_ID[lid]?.cc };
+    store.resolve = {
+      stateCountry: sid => DATA.meta.states[sid]?.cid,
+      landmarkCountry: lid => lmById(lid)?.cc,
+      landmarkPlace: lid => { const l = lmById(lid); return l ? { c: l.cc, s: l.sid, ci: l.gid } : null; },
+    };
     step(60, 'Drawing 258 countries & 4,596 regions…');
     const map = await new WorldMap(document.getElementById('map')).init();
     step(90, 'Placing the wonders…');
@@ -26,6 +30,8 @@ const step = (pct, text) => { bar.style.width = pct + '%'; if (text) msg.textCon
     ui.start();
     window.__app = { map, ui };
     initCloud();
+    // city sights (~250 KB) arrive after the map is on screen
+    loadSights().then(() => { store._derived = null; map.addSights(); ui.onSightsLoaded(); }).catch(console.warn);
     step(100, 'Bon voyage!');
     setTimeout(() => document.getElementById('boot').classList.add('done'), 250);
   } catch (e) {

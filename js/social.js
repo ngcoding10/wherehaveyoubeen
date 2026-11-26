@@ -6,6 +6,7 @@ import { cloud, getCore } from './cloud.js';
 import { normalizeUsername, validUsername } from './core.js';
 import { store } from './store.js';
 import { computeStats } from './stats.js';
+import { isWonder } from './landmarks.js';
 
 export const social = new EventTarget();
 social.state = 'signed-out'; // signed-out | off (signed in, cloud sync switched off) | loading | need-username | ready | error
@@ -106,7 +107,7 @@ function publicPayload() {
     name: (cloud.user?.name || '').split(' ')[0].slice(0, 30),
     stats: { countries: st.un, territories: st.terr, states: st.states, cities: st.cities, wonders: st.lms,
              world: Math.round(st.pctWorld * 10) / 10, continents: st.conts },
-    visited: { c: store.visitedCountries(), s: store.visitedStates(), l: store.landmarks(),
+    visited: { c: store.visitedCountries(), s: store.visitedStates(), l: store.landmarks().filter(isWonder),
                ci: store.cities().slice(0, 4000).map(([id, c]) => ({ i: +id, n: c.n || '', c: c.c || '' })) },
   };
 }

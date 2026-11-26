@@ -1,7 +1,11 @@
 // The map: MapLibre GL with our own vector data, globe + flat projections, pixel-art landmarks.
 import { store } from './store.js';
 import { DATA, loadCountryCities, cityMinZoom, loadStates } from './data.js';
-import { LANDMARKS } from './landmarks.js';
+import { LANDMARKS, SIGHTS } from './landmarks.js';
+// city sights only show once you are zoomed into a city
+const SIGHT_MINZOOM = 11;
+const ZOOM_OK = ['>=', ['zoom'], ['get', 'mz']];
+const lmFeature = l => pt([l.lon, l.lat], { id: l.id, name: l.name, icon: 'lm-' + l.sprite, rank: l.rank, cat: l.cat, mz: l.sight ? SIGHT_MINZOOM : 0 });
 import { renderSprite, renderIcon } from './sprites.js';
 
 const maplibregl = window.maplibregl;
@@ -93,7 +97,7 @@ export class WorldMap extends EventTarget {
     m.addSource('cities', { type: 'geojson', data: fc([]) });
     m.addSource('visited-cities', { type: 'geojson', data: fc([]) });
     m.addSource('wish-cities', { type: 'geojson', data: fc([]) });
-    m.addSource('landmarks', { type: 'geojson', data: fc(LANDMARKS.map(l => pt([l.lon, l.lat], { id: l.id, name: l.name, icon: 'lm-' + l.sprite, rank: l.rank, cat: l.cat }))) });
+    m.addSource('landmarks', { type: 'geojson', data: fc(LANDMARKS.map(lmFeature)) });
 
     const T = THEMES.midnight;
     const add = l => m.addLayer(l);
@@ -203,7 +207,7 @@ export class WorldMap extends EventTarget {
     add({ id: 'landmark-glow', type: 'circle', source: 'landmarks', filter: ['in', ['get', 'id'], ['literal', []]], minzoom: 3, paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 9, 5, 16, 9, 24], 'circle-color': '#ffd447', 'circle-blur': 0.7, 'circle-opacity': 0.75 } });
     // wonders appear once you zoom in past the whole-globe view
-    add({ id: 'landmarks', type: 'symbol', source: 'landmarks', minzoom: 3, layout: {
+    add({ id: 'landmarks', type: 'symbol', source: 'landmarks', minzoom: 3, filter: ZOOM_OK, layout: {
       'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 5, 0.8, 9, 1.25],
       'icon-anchor': 'bottom', 'icon-padding': 1, 'symbol-sort-key': ['get', 'rank'],
       'text-field': ['step', ['zoom'], '', 5.5, ['get', 'name']], 'text-font': ['Noto Sans Medium'], 'text-size': 11,
@@ -292,7 +296,7 @@ export class WorldMap extends EventTarget {
     m.setFilter('states-fill-hd', ['in', ['get', 'id'], ['literal', vs]]);
     for (const l of ['countries-visited', 'countries-visited-hd']) m.setPaintProperty(l, 'fill-color', fill);
     for (const l of ['states-fill', 'states-fill-hd']) m.setPaintProperty(l, 'fill-color', C.state);
-    m.setFilter('landmark-glow', ['in', ['get', 'id'], ['literal', vl]]);
+    m.setFilter('landmark-glow', ['all', ZOOM_OK, ['in', ['get', 'id'], ['literal', vl]]]);
     // wishlist (hidden while comparing with a friend, or when switched off); places already visited drop off
     const wishOn = store.settings.showWishlist !== false && !this.compare;
     const W = wishOn ? store.wishEntries() : [];
@@ -312,7 +316,7 @@ export class WorldMap extends EventTarget {
     m.setFilter('wish-c-line', ['in', ['get', 'id'], ['literal', wc]]);
     m.setFilter('wish-s-line', ['in', ['get', 'id'], ['literal', ws]]);
     for (const l of ['wish-c-line', 'wish-s-line']) m.setPaintProperty(l, 'line-color', C.wish);
-    m.setFilter('landmark-wish', ['in', ['get', 'id'], ['literal', wl]]);
+    m.setFilter('landmark-wish', ['all', ZOOM_OK, ['in', ['get', 'id'], ['literal', wl]]]);
     m.setPaintProperty('landmark-wish', 'circle-stroke-color', C.wish);
     m.getSource('wish-cities').setData(fc(wci.filter(([, c]) => c.lat != null).map(([k, c]) => pt([c.lon, c.lat], { id: +k.slice(3), n: c.n, cid: c.c }))));
     m.setPaintProperty('landmark-glow', 'circle-color', C.landmark);
@@ -323,6 +327,13 @@ export class WorldMap extends EventTarget {
     const notVisited = ['!', ['in', ['get', 'id'], ['literal', ids]]];
     m.setFilter('city-dots', ['all', ['>=', ['zoom'], ['get', 'mz']], notVisited]);
     m.setFilter('city-labels', ['all', ['>=', ['zoom'], ['get', 'mz']], notVisited]);
+  }
+  /** City sights arrive after the map is up: add their pixel icons and put them on the map (zoomed in only). */
+  addSights() {
+    const m = this.map; if (!m.getSource('landmarks')) return;
+    for (const key of new Set(SIGHTS.map(l => l.sprite))) if (!m.hasImage('lm-' + key)) this._addCanvasImage('lm-' + key, renderSprite(key, 4));
+    m.getSource('landmarks').setData(fc([...LANDMARKS, ...SIGHTS].map(lmFeature)));
+    this.refreshVisited();
   }
   applyLandmarkVisibility() {
     const v = store.settings.showLandmarks === false ? 'none' : 'visible';

@@ -2,7 +2,7 @@
 // into logbook entries. Matches against the app's own data first; anything not found is
 // looked up on OpenStreetMap's free Nominatim geocoder (no API key) and snapped to our places.
 import { DATA, loadStates, loadCityIndex, loadCountryCities, fold, haversine, countryAt, stateAt, country, stateMeta } from './data.js';
-import { LANDMARKS } from './landmarks.js';
+import { allLandmarks } from './landmarks.js';
 import { fuzzyCountries, fuzzyStates, fuzzyLandmarks, fuzzyCities, misspellingOf } from './typo.js';
 
 const ALIASES = {
@@ -47,7 +47,7 @@ function narrows(byName, place, region) {
   const n = norm(place);
   const rows = [...(byName.get(n) || []), ...(byName.get(n + ' city') || [])];
   if (rows.some(r => qualMatch(region, r[2], r[6]))) return true;
-  if (LANDMARKS.some(l => fold(l.name) === n && qualMatch(region, l.cc, ''))) return true;
+  if (allLandmarks().some(l => fold(l.name) === n && qualMatch(region, l.cc, ''))) return true;
   return (stateIdx.get(n) || []).some(sid => qualMatch(region, DATA.meta.states[sid].cid, ''));
 }
 
@@ -100,7 +100,7 @@ export async function resolveLocal({ text, qual }) {
   const cands = [];
   const cid = countryIdx.get(q) || (raw(text).length > 2 ? countryIdx.get(raw(text)) : null);
   if (cid && !qual) cands.push({ type: 'country', id: cid, label: country(cid).name, sub: country(cid).cont, cid, score: 100 });
-  for (const l of LANDMARKS) {
+  for (const l of allLandmarks()) {
     const n = fold(l.name);
     if (n === q || (q.length >= 4 && (n.startsWith(q + ' ') || n.startsWith(q))) || (q.length >= 6 && n.includes(q))) {
       if (qual && !qualMatch(qual, l.cc, '')) continue;

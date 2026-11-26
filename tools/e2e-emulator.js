@@ -150,6 +150,20 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     const back = await waitState(A.page, s => s.user && s.places.includes('c:JP') && s.places.includes('ci:2988507'));
     check('after reload (browser copy wiped) the places come back from whyb_users', !!back, back ? back.places.join(',') : JSON.stringify(await state(A.page)));
 
+    // landmarks: ticking one logs its city; the new item fields (c, s, ci, a, n) and city-sight ids sync like everything else
+    const sightId = await A.page.evaluate(async () => {
+      const L = await import('/js/landmarks.js'); await L.loadSights().catch(() => {});
+      const ui = window.__app.ui, sight = L.cityLandmarks(2988507).find(l => l.sight);
+      for (const id of ['louvre', 'tokyo-tower', sight?.id].filter(Boolean)) ui.toggle(await ui.describe('landmark', id));
+      return sight?.id || '';
+    });
+    const lmSaved = await until(async () => {
+      const d = await doc(`whyb_users/${uidA}`); if (!d) return null;
+      const b = JSON.parse(d.book).items;
+      return b['l:louvre']?.ci === 2988507 && b['ci:1850147']?.a === 1 && (!sightId || b['l:' + sightId]?.n) ? b : null;
+    });
+    check('ticked wonders and city sights sync with their city (whyb_users takes the new fields)', !!lmSaved, `sight: ${sightId || 'none loaded'}`);
+
     check('A with no account username is asked to pick one', (await waitState(A.page, s => s.social === 'need-username')) !== null);
     await friendsTab(A.page);
     const hint = await A.page.textContent('#panel-body');
@@ -188,6 +202,8 @@ const board = page => page.$$eval('.board .lb .nm', els => els.map(e => e.textCo
     check('request is gone after accepting', (await doc(`whyb_requests/${uidA}_${uidB}`)) === null);
     const bStats = await until(async () => { const p = await doc(`whyb_profiles/${uidB}`); return p?.stats?.countries >= 1 ? p : null; });
     check('profile publish works (stats and visited, including cities)', !!bStats && Array.isArray((await doc(`whyb_profiles/${uidA}`))?.visited?.ci), JSON.stringify((await doc(`whyb_profiles/${uidA}`))?.visited?.ci));
+    const profL = (await doc(`whyb_profiles/${uidA}`))?.visited?.l || [];
+    check('friends see wonders only (city sights stay out of visited.l and the wonders count)', profL.includes('louvre') && (!sightId || !profL.includes(sightId)), JSON.stringify(profL));
 
     // the rename form must stay open while friends' updates redraw the panel behind it (it used to be replaced by
     // the friends list unless the cursor was in the box), and a save in flight cannot be started a second time

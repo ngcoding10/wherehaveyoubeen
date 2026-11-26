@@ -398,6 +398,30 @@ canvas { image-rendering: pixelated; }
 .search input:focus-visible, .field input:focus-visible, .field textarea:focus-visible, .filter-input:focus-visible, .quick-card textarea:focus-visible { outline: none; }
 
 /* ============ responsive ============ */
+/* landmark checklists (city panel, country panel, the cities & sights dialog) */
+.lm-ck canvas { width: 26px; height: 26px; flex: none; margin: -4px 0; image-rendering: pixelated; }
+.lm-ck .sub { color: var(--c-landmark); font-size: 11px; }
+.small-note { margin: -4px 0 8px; font-size: 12px; }
+.lm-group { margin-top: 10px; }
+.lm-group-h { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 8px; font-size: 13px; color: var(--ink-2); box-shadow: inset 0 -2px 0 var(--line); }
+.lm-group-h a { cursor: pointer; font-weight: 600; text-decoration: none; }
+.lm-group-h span:last-child { font-family: var(--pix); font-size: 8px; color: var(--ink-3); }
+.trip-open { width: 100%; margin-top: 14px; }
+.trip-card { width: min(520px, 100%); display: flex; flex-direction: column; overflow: hidden; height: min(640px, 88vh); }
+.trip-card .sheet-head h2 { display: flex; align-items: center; gap: 10px; }
+.trip-card .sheet-head .flag { width: 24px; height: 18px; }
+.trip-sub { margin: 0 0 10px; color: var(--ink-2); font-size: 14px; }
+.trip-picked { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; max-height: 72px; overflow-y: auto; }
+.trip-picked:empty { display: none; }
+.trip-list { flex: 1; align-content: start; min-height: 120px; overflow-y: auto; margin-top: 8px; padding-right: 2px; }
+.trip-list .ck.locked { opacity: .6; cursor: default; }
+.trip-list .ck:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.trip-foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding-top: 12px; margin-top: 8px; box-shadow: 0 -2px 0 var(--line); }
+.trip-foot .trip-gap { flex: 1; }
+.trip-foot [hidden] { display: none; }
+.sg-list { display: grid; gap: 2px; }
+.sg-row { width: 100%; border: 0; text-align: left; }
+
 @media (max-width: 1100px) {
   .brand-sub { display: none; }
   #proj-toggle button { font-size: 0; padding: 8px 9px; gap: 0; }
@@ -479,6 +503,9 @@ button { touch-action: manipulation; }
   .sheet { padding: 0; align-items: end; }
   .sheet-card { width: 100%; max-height: calc(100dvh - 40px - var(--safe-t)); padding: 18px 16px calc(18px + var(--safe-b)); }
   .quick-card { width: 100%; }
+  .trip-card { width: 100%; height: calc(100dvh - 40px - var(--safe-t)); }
+  .trip-foot .pix-btn { padding: 14px 12px; }
+  .lm-ck canvas { width: 30px; height: 30px; }
   .qr { grid-template-columns: 22px 1fr 36px; row-gap: 6px; } .qr .q { grid-column: 2; } .qr select, .qr .nf { grid-column: 1 / 4; }
   .qr .st { grid-row: 1; } .qr .skip { grid-column: 3; grid-row: 1; font-size: 18px; min-width: 40px; min-height: 40px; }
   .theme-grid { grid-template-columns: repeat(2, 1fr); }

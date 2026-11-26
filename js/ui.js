@@ -1,7 +1,7 @@
 // Everything outside the map canvas: panels, popups, search, passport, stats, settings, account.
 import { store, DEFAULT_SETTINGS } from './store.js';
 import { loadStates, DATA, UN195, country, stateMeta, loadCountryCities, loadCityIndex, flagHTML, fold, haversine, countryAt, stateAt, fmtPop, esc } from './data.js';
-import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES } from './landmarks.js';
+import { LANDMARKS, LANDMARK_BY_ID, CATEGORIES, SIGHTS, lmById, isWonder, catName, cityLandmarks, countryLandmarks, loadSights, sightsLoaded } from './landmarks.js';
 import { renderSprite, renderIcon } from './sprites.js';
 import { THEMES, worldZoom } from './map.js';
 import { cloud, signIn, signOutUser, deleteMyCloudData, resumeSync, EMBEDDED } from './cloud.js';
@@ -146,7 +146,7 @@ export class UI {
       if (!d.point || !d.country) { tip.hidden = true; return; }
       const f = d.feature;
       let name, sub = '';
-      if (f?.layer.id === 'landmarks') { name = f.properties.name; sub = store.has('l:' + f.properties.id) ? '★ collected' : CATEGORIES[f.properties.cat]; }
+      if (f?.layer.id === 'landmarks') { name = f.properties.name; sub = store.has('l:' + f.properties.id) ? '★ collected' : f.properties.cat === 'C' ? 'city sight' : CATEGORIES[f.properties.cat]; }
       else if (f) { name = f.properties.n; sub = store.has('ci:' + f.properties.id) ? '✓ been here' : 'city'; }
       else if (d.state) { const s = stateMeta(d.state); name = s?.name; sub = country(d.country)?.name + (store.isVisited('s:' + d.state) ? ' · ✓' : ''); }
       else { name = country(d.country)?.name; sub = store.isVisited('c:' + d.country) ? '✓ visited' : ''; }
@@ -279,11 +279,16 @@ export class UI {
         data: { c: s.cid }, parents: [['c:' + s.cid, {}]] };
     }
     if (type === 'landmark') {
-      const l = LANDMARK_BY_ID[id]; if (!l) return null;
-      await loadStates().catch(() => {});
-      const sid = stateAt(l.lon, l.lat, l.cc);
-      return { key: 'l:' + id, cid: l.cc, sid, name: l.name, sub: `${CATEGORIES[l.cat]} · ${country(l.cc)?.name || ''}`, lm: l, lngLat: [l.lon, l.lat],
-        data: {}, parents: [sid ? ['s:' + sid, { c: l.cc }] : null, ['c:' + l.cc, {}]].filter(Boolean) };
+      let l = lmById(id);
+      if (!l) { await loadSights().catch(() => {}); l = lmById(id); }
+      if (!l) return null;
+      // a landmark in a city logs that city too (and its state and country), like a city logs its state and country
+      const city = l.gid ? await this.getCity(l.gid, l.cc).catch(() => null) : null;
+      let sid = city?.sid || l.sid;
+      if (!sid) { await loadStates().catch(() => {}); sid = stateAt(l.lon, l.lat, l.cc); }
+      return { key: 'l:' + id, cid: l.cc, sid, city, name: l.name, sub: [catName(l), city?.n, country(l.cc)?.name].filter(Boolean).join(' · '), lm: l, lngLat: [l.lon, l.lat],
+        data: { c: l.cc, s: sid || '', ci: city?.id || 0, ...(l.sight ? { n: l.name } : {}) },
+        parents: [city ? ['ci:' + city.id, cityData(city)] : null, sid ? ['s:' + sid, { c: l.cc }] : null, ['c:' + l.cc, {}]].filter(Boolean) };
     }
     if (type === 'city') {
       const c = await this.getCity(+id, props?.cid);
@@ -291,7 +296,7 @@ export class UI {
       const sname = c.sid ? stateMeta(c.sid)?.name : '';
       return { key: 'ci:' + c.id, cid: c.cid, sid: c.sid, name: c.n, city: c,
         sub: [sname, country(c.cid)?.name].filter(Boolean).join(', '), lngLat: [c.lon, c.lat],
-        data: { n: c.n, c: c.cid, s: c.sid, lat: c.lat, lon: c.lon, p: c.p },
+        data: cityData(c),
         parents: [c.sid ? ['s:' + c.sid, { c: c.cid }] : null, ['c:' + c.cid, {}]].filter(Boolean) };
     }
   }
@@ -323,15 +328,33 @@ export class UI {
       this.toast(`${esc(info.name)} is lit up because you've logged ${what} in it. Remove those to clear it.`, 4200);
       return true;
     }
-    const on = store.toggle(info.key, info.data, info.parents);
-    if (on && store.isWished(info.key)) { this.toast(`⭐ Wishlist ✓, you made it to <b>${esc(info.name)}</b>!`, 3500); this.celebrate(); return on; }
-    if (!on && store.isVisited(info.key)) this.toast(`${esc(info.name)} stays lit up because you've logged places inside it.`, 4200);
-    if (on) {
-      const what = info.key.startsWith('l:') ? '★ Collected' : info.key.startsWith('c:') ? 'Stamped' : 'Logged';
-      this.toast(`<b>${what}</b> ${esc(info.name)}`);
+    const isLm = info.key.startsWith('l:');
+    if (isLm && store.has(info.key)) { this.untickLandmark(info); return false; }
+    const on = store.toggle(info.key, info.data, info.parents, { auto: isLm });
+    const also = on && isLm && store.lastAdded.length ? ` · also logged ${listNames(store.lastAdded.map(k => this.keyName(k)))}` : '';
+    if (on && store.isWished(info.key)) { this.toast(`⭐ Wishlist ✓, you made it to <b>${esc(info.name)}</b>!${also}`, 3500); this.celebrate(); }
+    else if (!on && store.isVisited(info.key)) this.toast(`${esc(info.name)} stays lit up because you've logged places inside it.`, 4200);
+    else if (on) {
+      const what = isLm ? '★ Collected' : info.key.startsWith('c:') ? 'Stamped' : 'Logged';
+      this.toast(`<b>${what}</b> ${esc(info.name)}${also}`, also ? 3600 : 2600);
       if (info.key.startsWith('c:')) this.celebrate();
     }
+    // a newly stamped country: ask which cities (once per country; it can be reopened from the country panel)
+    if (on && info.key.startsWith('c:') && !store.get(info.key)?.g) setTimeout(() => this.openTrip(info.cid, { auto: true }), 450);
     return on;
+  }
+  untickLandmark(info) {
+    const { removed, kept } = store.removeLandmark(info.key);
+    const keptCity = kept.find(k => k.startsWith('ci:'));
+    let msg = `Un-ticked <b>${esc(info.name)}</b>`;
+    if (removed.length) msg += `, and removed ${listNames(removed.map(k => this.keyName(k)))} (logged only because of it)`;
+    if (keptCity) msg += `. ${esc(this.keyName(keptCity))} stays in your logbook`;
+    this.toast(msg, removed.length || keptCity ? 4200 : 2600);
+  }
+  /** Display name of any logbook key. */
+  keyName(k) {
+    const i = k.indexOf(':'), t = k.slice(0, i), id = k.slice(i + 1), v = store.get(k) || {};
+    return (t === 'c' ? country(id)?.name : t === 's' ? stateMeta(id)?.name : t === 'ci' ? v.n : lmById(id)?.name || v.n) || id;
   }
   toggleWish(info) {
     const on = store.toggleWish(info.key, info.data);
@@ -389,19 +412,20 @@ export class UI {
     const crumbs = [];
     if (type !== 'country') crumbs.push(`<a data-go="country:${info.cid}">${esc(country(info.cid)?.name)}</a>`);
     if ((type === 'city' || type === 'landmark') && info.sid) crumbs.push(`<a data-go="state:${info.sid}">${esc(stateMeta(info.sid)?.name)}</a>`);
+    if (type === 'landmark' && info.city) crumbs.push(`<a data-go="city:${info.city.id}:${info.cid}">${esc(info.city.n)}</a>`);
     const head = type === 'landmark'
       ? `<div class="p-title"><canvas data-sprite="${info.lm.sprite}" data-scale="6"></canvas><h2>${esc(info.name)}</h2></div>`
       : `<div class="p-title">${flagHTML(info.cid)}<h2>${esc(info.name)}</h2></div>`;
     const item = store.get(info.key) || {};
     body.innerHTML = `${head}
-      <div class="crumbs">${crumbs.join(' › ') || esc(info.sub)}${crumbs.length ? ' · ' + esc(type === 'landmark' ? CATEGORIES[info.lm.cat] : type === 'state' ? (info.meta.type || 'Region') : 'City') : ''}</div>
+      <div class="crumbs">${crumbs.join(' › ') || esc(info.sub)}${crumbs.length ? ' · ' + esc(type === 'landmark' ? catName(info.lm) : type === 'state' ? (info.meta.type || 'Region') : 'City') : ''}</div>
       ${type === 'landmark' ? `<p class="blurb">${esc(info.lm.blurb)}</p>` : ''}
       <div class="kv" id="kv"></div>
       <button class="pix-btn been ${on ? 'on' : ''}" style="--btn-on:${col}" id="been-btn"><span class="box">${on ? '✓' : ''}</span>${on ? (type === 'landmark' ? 'COLLECTED' : 'BEEN HERE') : 'I’VE BEEN HERE'}</button>
       ${on ? `<div class="field"><span>When (optional)</span><input type="month" id="f-date" value="${esc(item.d || '')}"></div>
              <div class="field"><span>Notes</span><textarea id="f-note" placeholder="Best meal, who you went with, what you'd do again…">${esc(item.note || '')}</textarea></div>` : ''}
       <div id="explore-extra"></div>`;
-    $$('[data-go]', body).forEach(a => a.onclick = () => { const [t, i] = a.dataset.go.split(':'); this.select(t, i, { fly: true }); });
+    $$('[data-go]', body).forEach(a => a.onclick = () => { const [t, i, c] = a.dataset.go.split(':'); this.select(t, i, { fly: true, props: { cid: c } }); });
     $('#been-btn').onclick = () => this.toggle(info);
     if (!on || store.isWished(info.key)) {
       const wb = document.createElement('button');
@@ -416,7 +440,7 @@ export class UI {
     const extra = $('#explore-extra');
     if (type === 'country') this.renderCountryExtra(extra, info);
     else if (type === 'state') this.renderStateExtra(extra, info);
-    else if (type === 'city') this.renderNearby(extra, info.lngLat, 80);
+    else if (type === 'city') this.renderCityExtra(extra, info);
     else if (type === 'landmark') this.renderNearby(extra, info.lngLat, 150, info.lm.id);
   }
 
@@ -428,8 +452,8 @@ export class UI {
       const m = info.meta;
       const st = store.visitedStates().filter(s => stateMeta(s)?.cid === info.cid).length;
       const ci = visitedCities.filter(([, c]) => c.c === info.cid).length;
-      const lms = LANDMARKS.filter(l => l.cc === info.cid);
-      kv.innerHTML = `<span><b>${st}</b>/${m.nstates} regions</span><span><b>${ci}</b> cities</span>${lms.length ? `<span><b>${lms.filter(l => store.has('l:' + l.id)).length}</b>/${lms.length} wonders</span>` : ''}<span>${esc(m.cont)}</span>${m.pop ? `<span>pop. ${fmtPop(m.pop)}</span>` : ''}`;
+      const lms = LANDMARKS.filter(l => l.cc === info.cid), sights = countryLandmarks(info.cid).filter(l => l.sight);
+      kv.innerHTML = `<span><b>${st}</b>/${m.nstates} regions</span><span><b>${ci}</b> cities</span>${lms.length ? `<span><b>${lms.filter(l => store.has('l:' + l.id)).length}</b>/${lms.length} wonders</span>` : ''}${sights.length ? `<span><b>${sights.filter(l => store.has('l:' + l.id)).length}</b>/${sights.length} city sights</span>` : ''}<span>${esc(m.cont)}</span>${m.pop ? `<span>pop. ${fmtPop(m.pop)}</span>` : ''}`;
     } else if (type === 'state') {
       const ci = visitedCities.filter(([, c]) => c.s === this.sel.id).length;
       kv.innerHTML = `<span><b>${ci}</b> cities logged</span>${info.meta.iso ? `<span>${esc(info.meta.iso)}</span>` : ''}`;
@@ -437,7 +461,7 @@ export class UI {
       const c = info.city;
       kv.innerHTML = `${c.p ? `<span>pop. <b>${fmtPop(c.p)}</b></span>` : ''}${c.cap ? '<span>★ capital</span>' : ''}<span>${c.lat.toFixed(2)}°, ${c.lon.toFixed(2)}°</span>${store.home ? `<span>${Math.round(haversine(store.home.lat, store.home.lon, c.lat, c.lon)).toLocaleString()} km from home</span>` : ''}`;
     } else {
-      kv.innerHTML = `<span>No. ${String(LANDMARKS.indexOf(info.lm) + 1).padStart(3, '0')}</span><span>${info.lm.lat.toFixed(3)}°, ${info.lm.lon.toFixed(3)}°</span>`;
+      kv.innerHTML = `<span>${info.lm.sight ? 'City sight' : `No. ${String(LANDMARKS.indexOf(info.lm) + 1).padStart(3, '0')}`}</span><span>${info.lm.lat.toFixed(3)}°, ${info.lm.lon.toFixed(3)}°</span>`;
     }
     // reflect toggle state in the big button too
     const btn = $('#been-btn');
@@ -447,11 +471,14 @@ export class UI {
   async renderCountryExtra(el, info) {
     const cid = info.cid;
     const lms = LANDMARKS.filter(l => l.cc === cid);
-    el.innerHTML = `${lms.length ? `<div class="p-sec"><h3>WONDERS HERE <span>${lms.length}</span></h3><div class="lm-chips">${lms.map(l => lmChip(l)).join('')}</div></div>` : ''}
+    el.innerHTML = `<button class="pix-btn small trip-open" id="trip-open">＋ Which cities &amp; sights did you visit?</button>
+      ${lms.length ? `<div class="p-sec"><h3>WONDERS HERE <span>${lms.length}</span></h3><div class="lm-chips">${lms.map(l => lmChip(l)).join('')}</div></div>` : ''}
+      <div id="sights-by-city"></div>
       <div class="p-sec"><h3>REGIONS <span>${info.meta.nstates}</span></h3><input class="filter-input" id="st-filter" placeholder="Filter regions…"><div class="ck-list" id="st-list" style="margin-top:8px"></div></div>
       <div class="p-sec"><h3>CITIES & TOWNS <span>${info.meta.ncities.toLocaleString()}</span></h3><input class="filter-input" id="ci-filter" placeholder="Find a city or town…"><div class="ck-list" id="ci-list" style="margin-top:8px"><div class="muted">Loading cities…</div></div></div>`;
     paintSprites(el);
     this.wireLmChips(el);
+    $('#trip-open').onclick = () => this.openTrip(cid);
     const states = Object.entries(DATA.meta.states).filter(([, s]) => s.cid === cid).sort((a, b) => a[1].name.localeCompare(b[1].name));
     const C = store.settings.colors;
     const drawStates = () => {
@@ -466,6 +493,7 @@ export class UI {
     $('#st-filter').oninput = drawStates;
     const map = await this.countryCityMap(cid).catch(() => new Map());
     if (this.sel?.id !== cid) return;
+    this.renderSightsByCity($('#sights-by-city'), cid, map);
     const all = [...map.values()];
     const drawCities = () => {
       const q = fold($('#ci-filter')?.value).trim();
@@ -513,13 +541,68 @@ export class UI {
     if (!this.stateLmCache.has(l.id)) this.stateLmCache.set(l.id, stateAt(l.lon, l.lat, l.cc));
     return this.stateLmCache.get(l.id);
   }
-  renderNearby(el, [lon, lat], km, skip) {
-    const near = LANDMARKS.filter(l => l.id !== skip).map(l => [l, haversine(lat, lon, l.lat, l.lon)]).filter(([, d]) => d < km).sort((a, b) => a[1] - b[1]).slice(0, 8);
+  /** A city's own landmarks as a checklist (ticking one logs it, and the city, state and country). */
+  renderCityExtra(el, info) {
+    const gid = info.city.id;
+    const draw = () => {
+      if (this.sel?.info !== info) return;
+      const lms = cityLandmarks(gid);
+      const got = () => lms.filter(l => store.has('l:' + l.id)).length;
+      el.innerHTML = (lms.length ? `<div class="p-sec"><h3>SIGHTS IN ${esc(info.name.toUpperCase())} <span id="city-lm-count">${got()}/${lms.length}</span></h3>
+        <p class="muted small-note">Tick the ones you've been to.</p><div class="ck-list lm-list" id="city-lm-list">${lms.map(l => lmRow(l)).join('')}</div></div>`
+        : sightsLoaded() ? '' : '<div class="p-sec"><div class="muted">Loading sights…</div></div>') + '<div id="city-near"></div>';
+      paintSprites(el);
+      const list = $('#city-lm-list', el);
+      const wasOn = () => store.isVisited(info.key);
+      let before = wasOn();
+      if (list) this.wireCk(list, key => this.describe('landmark', key.slice(2)), () => {
+        // ticking a sight can log the city itself: then redraw so the button, date and notes show it
+        if (wasOn() !== before) { before = wasOn(); return this.renderPanel(); }
+        const c = $('#city-lm-count'); if (c) c.textContent = `${got()}/${lms.length}`; this.updateExploreCounts();
+      });
+      this.renderNearby($('#city-near', el), info.lngLat, 80, null, new Set(lms.map(l => l.id)));
+    };
+    draw();
+    if (!sightsLoaded()) loadSights().then(draw).catch(() => {});
+  }
+  /** Every landmark in a country, grouped by city, as one checklist. */
+  renderSightsByCity(el, cid, cityMap) {
+    if (!el) return;
+    const draw = () => {
+      if (this.sel?.id !== cid || !el.isConnected) return;
+      const all = countryLandmarks(cid);
+      if (!all.length) { el.innerHTML = ''; return; }
+      const groups = new Map();
+      for (const l of all) { const k = l.gid && cityMap.has(l.gid) ? l.gid : 0; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l); }
+      const order = [...groups.keys()].filter(k => k).sort((a, b) => (store.has('ci:' + b) - store.has('ci:' + a)) || groups.get(b).length - groups.get(a).length || (cityMap.get(b).p - cityMap.get(a).p));
+      if (groups.has(0)) order.push(0);
+      const limit = this._sbcAll === cid ? order.length : 4;
+      const got = all.filter(l => store.has('l:' + l.id)).length;
+      el.innerHTML = `<div class="p-sec"><h3>LANDMARKS BY CITY <span>${got}/${all.length}</span></h3>${order.slice(0, limit).map(k => {
+        const ls = groups.get(k), c = cityMap.get(k);
+        return `<div class="lm-group"><div class="lm-group-h">${k ? `<a data-city="${k}">${esc(c.n)}</a>` : '<span>Outside the cities</span>'}<span>${ls.filter(l => store.has('l:' + l.id)).length}/${ls.length}</span></div>
+          <div class="ck-list lm-list">${ls.map(l => lmRow(l)).join('')}</div></div>`;
+      }).join('')}${order.length > limit ? `<button class="pix-btn small ghost more-btn" id="sbc-more">Show all ${order.length} groups</button>` : ''}</div>`;
+      paintSprites(el);
+      $$('.ck-list', el).forEach(list => this.wireCk(list, key => this.describe('landmark', key.slice(2)), () => { this.updateExploreCounts(); redrawCounts(); }));
+      $$('[data-city]', el).forEach(a => a.onclick = () => this.select('city', a.dataset.city, { fly: true, props: { cid } }));
+      const more = $('#sbc-more', el); if (more) more.onclick = () => { this._sbcAll = cid; draw(); };
+    };
+    const redrawCounts = () => {
+      $$('.lm-group', el).forEach(g => { const rows = $$('.ck', g); $('.lm-group-h span:last-child', g).textContent = `${rows.filter(r => r.classList.contains('on')).length}/${rows.length}`; });
+      const all = countryLandmarks(cid); const h = $('h3 span', el); if (h) h.textContent = `${all.filter(l => store.has('l:' + l.id)).length}/${all.length}`;
+    };
+    draw();
+    if (!sightsLoaded()) loadSights().then(draw).catch(() => {});
+  }
+  renderNearby(el, [lon, lat], km, skip, skipSet) {
+    if (!el) return;
+    const near = LANDMARKS.filter(l => l.id !== skip && !skipSet?.has(l.id)).map(l => [l, haversine(lat, lon, l.lat, l.lon)]).filter(([, d]) => d < km).sort((a, b) => a[1] - b[1]).slice(0, 8);
     el.innerHTML = near.length ? `<div class="p-sec"><h3>WONDERS NEARBY</h3><div class="lm-chips">${near.map(([l, d]) => lmChip(l, `${Math.round(d)} km`)).join('')}</div></div>` : '';
     paintSprites(el); this.wireLmChips(el);
   }
   wireLmChips(el) { $$('.lm-chip', el).forEach(b => b.onclick = () => this.select('landmark', b.dataset.id, { fly: true })); }
-  wireCk(list, describeFn) {
+  wireCk(list, describeFn, after) {
     $$('.ck', list).forEach(row => {
       row.onclick = async ev => {
         if (ev.target.closest('.go')) { const [t, id, cid] = row.dataset.go.split(':'); return this.select(t, id, { fly: true, props: { cid } }); }
@@ -528,6 +611,7 @@ export class UI {
         this._suppressPanel = true;
         const on = this.toggle(info);
         row.classList.toggle('on', store.isVisited(row.dataset.key));
+        after?.();
       };
     });
   }
@@ -539,7 +623,7 @@ export class UI {
     const spot = LANDMARKS[(day * 7919) % LANDMARKS.length];
     body.innerHTML = `
       <div class="p-title"><canvas data-icon="plane" style="width:56px;height:44px"></canvas><h2>${n ? 'Welcome back, traveler' : 'Start your logbook'}</h2></div>
-      <p class="blurb">Click any <b>country</b> to stamp it. Zoom in and click a <b>state</b>, then the <b>city</b> dots. Hunt down all ${LANDMARKS.length} pixel <b>wonders</b>.</p>
+      <p class="blurb">Click any <b>country</b> to stamp it. Zoom in and click a <b>state</b>, then the <b>city</b> dots. Hunt down all ${LANDMARKS.length} pixel <b>wonders</b>, and tick off the sights in each city.</p>
       <div class="row-btns"><button class="pix-btn small primary" id="w-quick">＋ Quick add many places</button><button class="pix-btn small" id="w-locate">📍 Check in where I am</button><button class="pix-btn small ghost" id="w-search">🔎 Search</button></div>
       <div class="p-sec"><h3>WONDER OF THE DAY</h3>
         <button class="lm-chip" data-id="${spot.id}" style="width:100%;padding:10px"><canvas data-sprite="${spot.sprite}" style="width:72px;height:72px"></canvas>
@@ -554,7 +638,7 @@ export class UI {
   }
   recentTag(k, v) {
     const [t, id] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
-    const name = t === 'c' ? country(id)?.name : t === 's' ? stateMeta(id)?.name : t === 'ci' ? v.n : LANDMARK_BY_ID[id]?.name;
+    const name = t === 'c' ? country(id)?.name : t === 's' ? stateMeta(id)?.name : t === 'ci' ? v.n : lmById(id)?.name || v.n;
     const cls = { c: 'st', s: 'st', ci: 'ci', l: 'lm' }[t];
     const type = { c: 'country', s: 'state', ci: 'city', l: 'landmark' }[t];
     const style = t === 'c' ? 'style="--x:1"' : '';
@@ -572,10 +656,10 @@ export class UI {
   }
   renderWishlist(body, sw) {
     const W = store.wishEntries();
-    const groups = { c: ['COUNTRIES', 'country'], s: ['STATES & REGIONS', 'state'], ci: ['CITIES', 'city'], l: ['WONDERS', 'landmark'] };
-    const nameOf = (t, id, v) => t === 'c' ? country(id)?.name : t === 's' ? stateMeta(id)?.name : t === 'ci' ? v.n : LANDMARK_BY_ID[id]?.name;
-    const subOf = (t, id, v) => t === 'c' ? country(id)?.cont : t === 's' ? country(stateMeta(id)?.cid)?.name : t === 'ci' ? country(v.c)?.name : country(LANDMARK_BY_ID[id]?.cc)?.name;
-    const iconOf = (t, id, v) => t === 'l' ? `<canvas data-sprite="${LANDMARK_BY_ID[id]?.sprite}" style="width:30px;height:30px"></canvas>` : flagHTML(t === 'c' ? id : t === 's' ? stateMeta(id)?.cid : v.c);
+    const groups = { c: ['COUNTRIES', 'country'], s: ['STATES & REGIONS', 'state'], ci: ['CITIES', 'city'], l: ['WONDERS & SIGHTS', 'landmark'] };
+    const nameOf = (t, id, v) => t === 'c' ? country(id)?.name : t === 's' ? stateMeta(id)?.name : t === 'ci' ? v.n : lmById(id)?.name || v.n;
+    const subOf = (t, id, v) => t === 'c' ? country(id)?.cont : t === 's' ? country(stateMeta(id)?.cid)?.name : t === 'ci' ? country(v.c)?.name : country(lmById(id)?.cc || v.c)?.name;
+    const iconOf = (t, id, v) => t === 'l' ? `<canvas data-sprite="${lmById(id)?.sprite || 'ruins'}" style="width:30px;height:30px"></canvas>` : flagHTML(t === 'c' ? id : t === 's' ? stateMeta(id)?.cid : v.c);
     const done = W.filter(([k]) => store.isVisited(k)).length;
     let html = sw + `<div class="row-btns" style="margin:10px 0 4px"><button class="pix-btn small primary" id="wl-quick">＋ Add places to wishlist</button></div>`;
     if (!W.length) html += `<div class="empty"><p>Your wishlist is empty.<br>Tap <b>☆</b> on any country, city or wonder, or use Quick add, to save places you want to go. They show on the map with diagonal stripes.</p></div>`;
@@ -620,7 +704,7 @@ export class UI {
         const c = country(cid);
         const st = states.filter(s => stateMeta(s)?.cid === cid);
         const ci = cities.filter(([, v]) => v.c === cid);
-        const lm = lms.filter(l => LANDMARK_BY_ID[l]?.cc === cid);
+        const lm = lms.filter(l => store.landmarkPlace(l).c === cid);
         const d = store.get('c:' + cid)?.d;
         html += `<div class="lb-country" data-name="${esc(fold(c.name + ' ' + st.map(s => stateMeta(s)?.name).join(' ') + ' ' + ci.map(([, v]) => v.n).join(' ')))}">
           <div class="lb-row" data-cid="${cid}">${flagHTML(cid)}<span class="nm">${esc(c.name)}</span><span class="cnt">${[st.length && st.length + ' reg', ci.length && ci.length + ' cities', lm.length && lm.length + '★', d && fmtMonth(d)].filter(Boolean).join(' · ')}</span><span class="chev">›</span></div>
@@ -628,7 +712,7 @@ export class UI {
             <button class="pix-btn small ghost" data-sel="country:${cid}:">Open ${esc(c.name)} ›</button><div style="height:6px"></div>
             ${st.map(s => `<button class="tag st" data-sel="state:${s}:"><i></i>${esc(stateMeta(s)?.name)}</button>`).join('')}
             ${ci.sort((a, b) => a[1].n.localeCompare(b[1].n)).map(([id, v]) => `<button class="tag ci" data-sel="city:${id}:${cid}"><i></i>${esc(v.n)}</button>`).join('')}
-            ${lm.map(l => `<button class="tag lm" data-sel="landmark:${l}:"><i></i>${esc(LANDMARK_BY_ID[l].name)}</button>`).join('')}
+            ${lm.map(l => `<button class="tag lm" data-sel="landmark:${l}:"><i></i>${esc(this.keyName('l:' + l))}</button>`).join('')}
           </div></div>`;
       }
     }
@@ -647,7 +731,7 @@ export class UI {
   // ---- passport ----
   renderPassport(body) {
     const cs = Object.entries(store.book.items).filter(([k]) => k.startsWith('c:')).sort((a, b) => (sortDate(a[1]) - sortDate(b[1])));
-    const lms = store.landmarks();
+    const lms = store.landmarks().filter(isWonder);
     const name = cloud.user?.name || 'Traveler';
     body.innerHTML = `<div class="pp-cover"><canvas data-icon="plane" style="width:56px;height:44px"></canvas><div class="t">PASSPORT</div><div class="s">${esc(name)} · ${cs.length} ${cs.length === 1 ? 'stamp' : 'stamps'}</div></div>
       <div class="passport"><div class="passport-head"><span>VISAS / ENTRIES</span><span>${cs.length}</span></div>
@@ -661,16 +745,38 @@ export class UI {
 
   // ---- landmarks / wonders ----
   renderLandmarks(body) {
-    const got = new Set(store.landmarks());
+    const sw = `<div class="seg lb-mode" role="group" aria-label="Show"><button data-lmm="wonders" class="${this.lmMode !== 'sights' ? 'active' : ''}">★ Wonders</button><button data-lmm="sights" class="${this.lmMode === 'sights' ? 'active' : ''}">City sights</button></div>`;
+    const wireSw = () => $$('[data-lmm]', body).forEach(b => b.onclick = () => { this.lmMode = b.dataset.lmm; this.renderPanel(true); });
+    if (this.lmMode === 'sights') { this.renderSightsTab(body, sw); wireSw(); return; }
+    const got = new Set(store.landmarks().filter(isWonder));
     const cats = ['all', 'got', ...Object.keys(CATEGORIES)];
     const label = c => c === 'all' ? 'All' : c === 'got' ? `Collected (${got.size})` : CATEGORIES[c];
     const list = LANDMARKS.filter(l => this.lmFilter === 'all' || (this.lmFilter === 'got' ? got.has(l.id) : l.cat === this.lmFilter));
-    body.innerHTML = `<div class="kv"><span><b>${got.size}</b> / ${LANDMARKS.length} wonders collected</span></div>
+    body.innerHTML = `${sw}<div class="kv" style="margin-top:12px"><span><b>${got.size}</b> / ${LANDMARKS.length} wonders collected</span></div>
       <div class="bar" style="--fill:var(--c-landmark);margin:-6px 0 14px"><i style="width:calc(${(got.size / LANDMARKS.length) * 100}% - 4px)"></i></div>
       <div class="filters">${cats.map(c => `<button class="chip ${this.lmFilter === c ? 'active' : ''}" data-f="${c}">${esc(label(c))}</button>`).join('')}</div>
       <div class="dex">${list.map(l => `<button class="dex-card ${got.has(l.id) ? 'on' : 'off'}" data-id="${l.id}" title="${esc(l.name)} — ${esc(country(l.cc)?.name || '')}"><span class="dex-no">${String(LANDMARKS.indexOf(l) + 1).padStart(3, '0')}</span><canvas data-sprite="${l.sprite}"></canvas>${esc(l.name)}</button>`).join('')}</div>`;
     $$('.chip', body).forEach(b => b.onclick = () => { this.lmFilter = b.dataset.f; this.renderPanel(true); });
     $$('.dex-card', body).forEach(b => b.onclick = () => this.select('landmark', b.dataset.id, { fly: true }));
+    wireSw();
+  }
+  /** City sights: not part of the Wonders collection; listed per country, ticked off in each country's checklist. */
+  renderSightsTab(body, sw) {
+    if (!sightsLoaded()) { body.innerHTML = sw + '<div class="muted" style="margin-top:14px">Loading city sights…</div>'; loadSights().then(() => { if (this.tab === 'landmarks') this.renderPanel(); }).catch(() => {}); return; }
+    const got = SIGHTS.filter(l => store.has('l:' + l.id)).length;
+    const byC = new Map();
+    for (const l of SIGHTS) { if (!byC.has(l.cc)) byC.set(l.cc, [0, 0]); const r = byC.get(l.cc); r[1]++; if (store.has('l:' + l.id)) r[0]++; }
+    const rows = [...byC.entries()].sort((a, b) => (b[1][0] > 0) - (a[1][0] > 0) || (country(a[0])?.name || '').localeCompare(country(b[0])?.name || ''));
+    body.innerHTML = `${sw}<div class="kv" style="margin-top:12px"><span><b>${got}</b> / ${SIGHTS.length} city sights ticked</span></div>
+      <p class="muted">Famous sights in ${new Set(SIGHTS.map(l => l.gid)).size} of the most-visited cities. They don't count toward the Wonders collection. Open a country to tick them off city by city.</p>
+      <input class="filter-input" id="sg-filter" placeholder="Filter countries…" style="margin:6px 0 8px">
+      <div class="sg-list">${rows.map(([cc, [g, n]]) => `<button class="lb-row sg-row" data-cc="${cc}" data-name="${esc(fold(country(cc)?.name || cc))}">${flagHTML(cc)}<span class="nm">${esc(country(cc)?.name || cc)}</span><span class="cnt">${g}/${n}</span><span class="chev">›</span></button>`).join('')}</div>`;
+    $$('.sg-row', body).forEach(b => b.onclick = () => this.select('country', b.dataset.cc, { fly: true }));
+    $('#sg-filter').oninput = e => { const q = fold(e.target.value).trim(); $$('.sg-row', body).forEach(r => r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none'); };
+  }
+  onSightsLoaded() {
+    if (this.tab === 'landmarks' && this.lmMode === 'sights') this.renderPanel();
+    else if (this.tab === 'explore' && this.sel?.info && ['country', 'city'].includes(this.sel.type)) this.updateExploreCounts();
   }
 
   // ---- stats ----
@@ -685,6 +791,7 @@ export class UI {
         <div class="bs"><b>${st.states}</b><span>states & regions</span></div>
         <div class="bs"><b>${st.cities}</b><span>cities & towns</span></div>
         <div class="bs"><b>${st.lms}<small style="font-size:10px">/${LANDMARKS.length}</small></b><span>pixel wonders</span></div>
+        ${st.sights ? `<div class="bs"><b>${st.sights}</b><span>city sights</span></div>` : ''}
         <div class="bs"><b>${st.conts}<small style="font-size:10px">/7</small></b><span>continents</span></div>
         ${st.terr ? `<div class="bs wide"><b>${st.terr}</b><span>territories & other areas (not counted in the 195)</span></div>` : ''}
         ${st.far ? `<div class="bs wide"><b style="font-size:13px">${esc(st.far.n)}</b><span>furthest logged city from home · ${Math.round(st.far.d).toLocaleString()} km</span></div>` : ''}
@@ -730,7 +837,7 @@ export class UI {
       const pick = (arr, nameFn, n) => arr.map(x => [x, score(nameFn(x))]).filter(([, s]) => s < 9).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
       let cs = pick(Object.entries(DATA.meta.countries), ([, c]) => c.name + ' ' + c.long, 5);
       let ss = pick(Object.entries(DATA.meta.states), ([, s]) => s.name, 5);
-      let ls = pick(LANDMARKS, l => l.name, 5);
+      let ls = pick(SIGHTS.length ? [...LANDMARKS, ...SIGHTS] : LANDMARKS, l => l.name, 5);
       let ci = [];
       try { const idx = await loadCityIndex(); ci = []; for (const r of idx) { const s = score(r[1]); if (s < 9) { ci.push([r, s]); if (ci.length > 400) break; } } ci = ci.sort((a, b) => a[1] - b[1] || b[0][5] - a[0][5]).slice(0, 8).map(([r]) => r); } catch { }
       // Nothing, or hardly anything, matched as typed: add what they most likely meant ("madird" → Madrid).
@@ -763,7 +870,7 @@ export class UI {
       const grp = (title, arr, fn, best) => { if (arr.length) groups.push({ title, arr, fn, best }); };
       const best = (arr, nameFn, adj = () => 0) => Math.min(...arr.map(x => (guess.get(x) ?? score(nameFn(x))) + adj(x)));
       grp('COUNTRIES', cs, ([id, c]) => [`${flagHTML(id)}<span>${esc(c.name)}</span><span class="sr-sub">${store.isVisited('c:' + id) ? '✓ ' : ''}${esc(c.cont)}</span>`, ['country', id]], best(cs, ([, c]) => c.name) - 0.5);
-      grp('WONDERS', ls, l => [`<canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}</span><span class="sr-sub">${store.has('l:' + l.id) ? '★ ' : ''}${esc(country(l.cc)?.name || '')}</span>`, ['landmark', l.id]], best(ls, l => l.name) - 1);
+      grp(SIGHTS.length ? 'WONDERS & SIGHTS' : 'WONDERS', ls, l => [`<canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}</span><span class="sr-sub">${store.has('l:' + l.id) ? '★ ' : ''}${esc(country(l.cc)?.name || '')}</span>`, ['landmark', l.id]], best(ls, l => l.name) - 1);
       grp('STATES & REGIONS', ss, ([id, s]) => [`${flagHTML(s.cid)}<span>${esc(s.name)}</span><span class="sr-sub">${store.isVisited('s:' + id) ? '✓ ' : ''}${esc(country(s.cid)?.name)}</span>`, ['state', id]], best(ss, ([, s]) => s.name) - 0.2);
       grp('CITIES', ci, r => [`<span class="dot ${store.has('ci:' + r[0]) ? 'on' : ''}"></span><span>${esc(r[1])}</span><span class="sr-sub">${esc([r[6], country(r[2])?.name].filter(Boolean).join(', '))}</span>`, ['city', r[0], r[2]]],
         best(ci, r => r[1], r => r[5] >= 5e5 ? -1.5 : r[5] >= 1e5 ? -0.3 : 0));
@@ -963,6 +1070,126 @@ export class UI {
     this.setTab('logbook');
   }
 
+  // ───────────────────────── trip: country → which cities → which sights ─────────────────────────
+  /** Opened once when a country is stamped (auto), or any time from the country panel. Every step can be skipped. */
+  async openTrip(cid, { auto } = {}) {
+    const c = country(cid); if (!c) return;
+    if (auto && $$('.sheet').some(s => !s.hidden)) return;           // never stack on another dialog
+    if (auto && store.get('c:' + cid)?.g) return;                     // already offered for this country
+    const item = store.get('c:' + cid);
+    if (item && !item.g) store.set('c:' + cid, { g: 1 });             // offered once; synced with the logbook
+    const map = await this.countryCityMap(cid).catch(() => new Map());
+    await loadSights().catch(() => {});
+    const all = [...map.values()];
+    if (auto && !all.length) return;
+    // biggest and most-visited first: population, boosted by how many sights the city has
+    const score = x => (x.p || 0) * (1 + 2 * cityLandmarks(x.id).length) + (x.cap ? x.p || 0 : 0);
+    all.sort((a, b) => score(b) - score(a));
+    this.trip = { cid, step: 'cities', picks: [], queue: [], i: 0, q: '', all, cities: 0, sights: 0 };
+    this.renderTrip();
+    this.openSheet('trip-sheet', this.isPhone() ? '#trip-skip' : '#trip-q');
+  }
+  renderTrip() {
+    const t = this.trip, card = $('#trip-card'), c = country(t.cid);
+    const C = store.settings.colors;
+    if (t.step === 'cities') {
+      card.innerHTML = `<div class="sheet-head"><h2>${flagHTML(t.cid)} WHICH CITIES?</h2><button class="x" data-close aria-label="Close">✕</button></div>
+        <p class="trip-sub">Which cities did you visit in <b>${esc(c.name)}</b>? Pick as many as you like, or skip.</p>
+        <input class="filter-input" id="trip-q" placeholder="Search cities in ${esc(c.name)}…" autocomplete="off" value="${esc(t.q)}" aria-label="Search cities">
+        <div class="trip-picked" id="trip-picked"></div>
+        <div class="ck-list trip-list" id="trip-list" style="--ck:${C.city}"></div>
+        <div class="trip-foot"><button class="pix-btn ghost" id="trip-skip">Skip</button><button class="pix-btn primary" id="trip-next"></button></div>`;
+      const drawList = () => {
+        const q = fold(t.q).trim();
+        let list = t.all;
+        if (q) {
+          // as typed first (names that start with it, then contain it); then what they most likely meant ("parsi" → Paris),
+          // ahead of the partial matches when it is a much bigger place
+          const pre = t.all.filter(x => fold(x.n).startsWith(q)), part = t.all.filter(x => !fold(x.n).startsWith(q) && fold(x.n).includes(q));
+          const have = new Set([...pre, ...part]);
+          const typos = q.length >= 3 ? fuzzyIn(t.all, x => x.n, q, { weight: x => x.p || 0 }).filter(x => !have.has(x)) : [];
+          const big = typos.filter(x => (x.p || 0) >= 20 * Math.max(1, ...part.map(y => y.p || 0)));
+          list = [...pre, ...big, ...part, ...typos.filter(x => !big.includes(x))];
+        }
+        list = list.slice(0, 40);
+        $('#trip-list').innerHTML = list.map(x => {
+          const logged = store.has('ci:' + x.id), on = logged || t.picks.includes(x.id), n = cityLandmarks(x.id).length;
+          const sub = logged ? '✓ in logbook' : [n ? `${n} sight${n === 1 ? '' : 's'}` : '', x.sid ? stateMeta(x.sid)?.name : '', fmtPop(x.p)].filter(Boolean).join(' · ');
+          return `<div class="ck ${on ? 'on' : ''} ${logged ? 'locked' : ''}" data-gid="${x.id}" role="checkbox" aria-checked="${on}" tabindex="0"><span class="bx"></span><span class="nm">${esc(x.n)}${x.cap ? ' <span class="cap">★</span>' : ''}</span><span class="sub">${esc(sub)}</span></div>`;
+        }).join('') || `<div class="muted">No city called “${esc(t.q)}” in our list for ${esc(c.name)}.</div>`;
+        $$('#trip-list .ck').forEach(row => {
+          const flip = () => {
+            const gid = +row.dataset.gid; if (store.has('ci:' + gid)) return;
+            const i = t.picks.indexOf(gid); if (i >= 0) t.picks.splice(i, 1); else t.picks.push(gid);
+            row.classList.toggle('on', i < 0); row.setAttribute('aria-checked', i < 0); drawFoot();
+          };
+          row.onclick = flip;
+          row.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } };
+        });
+      };
+      const drawFoot = () => {
+        const byId = new Map(t.all.map(x => [x.id, x]));
+        $('#trip-picked').innerHTML = t.picks.map(g => `<button class="tag ci" data-unpick="${g}" title="Remove"><i></i>${esc(byId.get(g)?.n)} ✕</button>`).join('');
+        $$('[data-unpick]', card).forEach(b => b.onclick = () => { t.picks = t.picks.filter(g => g !== +b.dataset.unpick); drawList(); drawFoot(); });
+        const n = t.picks.length, withSights = t.picks.some(g => cityLandmarks(g).length);
+        const next = $('#trip-next');
+        next.hidden = !n;
+        next.textContent = !n ? '' : `Add ${n} cit${n === 1 ? 'y' : 'ies'}${withSights ? ' ›' : ' ✓'}`;
+        $('#trip-skip').textContent = n ? 'Cancel' : 'Skip';
+      };
+      drawList(); drawFoot();
+      const inp = $('#trip-q');
+      inp.oninput = debounce(() => { if (!inp.isConnected) return; t.q = inp.value; drawList(); }, 90);
+      $('#trip-skip').onclick = () => this.closeTrip();
+      $('#trip-next').onclick = () => this.tripAddCities();
+      return;
+    }
+    // sights for one city at a time
+    const gid = t.queue[t.i], city = t.all.find(x => x.id === gid), lms = cityLandmarks(gid);
+    const last = t.i === t.queue.length - 1;
+    card.innerHTML = `<div class="sheet-head"><h2>BEEN TO ANY OF THESE?</h2><button class="x" data-close aria-label="Close">✕</button></div>
+      <p class="trip-sub"><b>${esc(city?.n || '')}</b>${t.queue.length > 1 ? ` · city ${t.i + 1} of ${t.queue.length}` : ''}. Tick the sights you saw.</p>
+      <div class="ck-list lm-list trip-list" id="trip-list">${lms.map(l => lmRow(l, { noGo: true })).join('')}</div>
+      <div class="trip-foot"><button class="pix-btn ghost" id="trip-back">‹ Back</button><span class="trip-gap"></span><button class="pix-btn ghost" id="trip-skip">${last ? 'Skip' : 'Skip city'}</button><button class="pix-btn primary" id="trip-next">${last ? 'Done ✓' : 'Next city ›'}</button></div>`;
+    paintSprites(card);
+    $$('#trip-list .ck').forEach(row => {
+      row.setAttribute('role', 'checkbox'); row.tabIndex = 0; row.setAttribute('aria-checked', row.classList.contains('on'));
+      const flip = async () => {
+        const info = await this.describe('landmark', row.dataset.key.slice(2)); if (!info) return;
+        if (store.has(info.key)) { store.removeLandmark(info.key); t.sights--; }
+        else { store.toggle(info.key, info.data, info.parents, { auto: true }); t.sights++; }
+        row.classList.toggle('on', store.has(info.key)); row.setAttribute('aria-checked', store.has(info.key));
+      };
+      row.onclick = flip;
+      row.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } };
+    });
+    $('#trip-back').onclick = () => { if (t.i > 0) t.i--; else t.step = 'cities'; this.renderTrip(); };
+    const go = () => { if (last) this.closeTrip(true); else { t.i++; this.renderTrip(); $('#trip-next')?.focus(); } };
+    $('#trip-skip').onclick = go;
+    $('#trip-next').onclick = go;
+  }
+  async tripAddCities() {
+    const t = this.trip;
+    const entries = [];
+    for (const gid of t.picks) { const info = await this.describe('city', gid, { cid: t.cid }).catch(() => null); if (info) entries.push([info.key, info.data, info.parents]); }
+    const before = t.picks.filter(g => store.has('ci:' + g)).length;
+    store.addMany(entries);
+    t.cities += t.picks.length - before;
+    t.queue = t.picks.filter(g => cityLandmarks(g).length);
+    t.picks = [];
+    if (!t.queue.length) return this.closeTrip(true);
+    t.step = 'sights'; t.i = 0;
+    this.renderTrip();
+    $('#trip-next')?.focus();
+  }
+  closeTrip(done) {
+    const t = this.trip;
+    this.closeSheet($('#trip-sheet'));
+    if (!done || !t) return;
+    const parts = [t.cities && `${t.cities} cit${t.cities === 1 ? 'y' : 'ies'}`, t.sights > 0 && `${t.sights} sight${t.sights === 1 ? '' : 's'}`].filter(Boolean);
+    if (parts.length) { this.toast(`<b>＋ Logged ${parts.join(' and ')}</b> in ${esc(country(t.cid)?.name)}`, 3200); this.celebrate(); }
+  }
+
   openSheet(id, focusSel) {
     const el = $('#' + id);
     this._sheetOpener = document.activeElement;
@@ -1055,6 +1282,13 @@ function withTypos(list, all, q) {
 function keyOf(c) { return ({ country: 'c:', state: 's:', city: 'ci:', landmark: 'l:' })[c.type] + c.id; }
 function ckRow(key, name, sub, style, go, cap) {
   return `<div class="ck ${store.isVisited(key) ? 'on' : ''}" data-key="${key}" data-go="${go}" style="${style}"><span class="bx"></span><span class="nm">${esc(name)}${cap ? ' <span class="cap">★</span>' : ''}</span><span class="sub">${esc(sub || '')}</span><button class="go" title="Show on map">›</button></div>`;
+}
+function cityData(c) { return { n: c.n, c: c.cid, s: c.sid, lat: c.lat, lon: c.lon, p: c.p }; }
+/** "Paris, Île-de-France and France" */
+function listNames(names) { const n = [...new Set(names)].map(x => `<b>${esc(x)}</b>`); return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]; }
+/** One landmark as a checklist row. */
+function lmRow(l, { noGo } = {}) {
+  return `<div class="ck lm-ck ${store.has('l:' + l.id) ? 'on' : ''}" data-key="l:${l.id}" data-go="landmark:${l.id}" style="--ck:var(--c-landmark)"><span class="bx"></span><canvas data-sprite="${l.sprite}"></canvas><span class="nm">${esc(l.name)}</span>${l.sight ? '' : '<span class="sub">★ wonder</span>'}${noGo ? '' : `<button class="go" title="Show on map" aria-label="Show ${esc(l.name)} on the map">›</button>`}</div>`;
 }
 function lmChip(l, extra) {
   return `<button class="lm-chip ${store.has('l:' + l.id) ? 'on' : ''}" data-id="${l.id}"><canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}${extra ? `<br><small class="muted">${extra}</small>` : ''}</span></button>`;

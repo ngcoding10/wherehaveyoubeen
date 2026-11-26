@@ -1087,6 +1087,7 @@ export class UI {
     all.sort((a, b) => score(b) - score(a));
     this.trip = { cid, step: 'cities', picks: [], queue: [], i: 0, q: '', all, cities: 0, sights: 0 };
     this.renderTrip();
+    $('#toast').classList.remove('show');                              // the "Stamped" note would sit on top of the list
     this.openSheet('trip-sheet', this.isPhone() ? '#trip-skip' : '#trip-q');
   }
   renderTrip() {

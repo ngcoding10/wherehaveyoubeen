@@ -54,3 +54,8 @@ It needs no backend: serve this folder on port 8000 and run `node tools/e2e-sear
 `e2e-landmarks.js` checks that ticking a landmark logs its city and country, un-ticking, the city checklist
 and the "which cities?" step after stamping a country at phone size. Serve this folder on port 8000 and run
 `node tools/e2e-landmarks.js` (`SHOTS=dir` also saves screenshots).
+
+`e2e-quicktick.js` checks one-tap ticking at phone size: a tap on a landmark in the Wonders grid, the city and
+country checklists and the City sights list ticks it without leaving the screen, a second tap un-ticks it, the pin
+button opens it on the map, a run of taps shares one toast with an undo, and 20 taps in a row save in well under a
+second. Serve this folder on port 8000 and run `node tools/e2e-quicktick.js` (`SHOTS=dir` saves two screenshots).

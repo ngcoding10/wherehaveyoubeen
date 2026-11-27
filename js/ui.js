@@ -80,9 +80,15 @@ export class UI {
     if (pb) { const globe = store.settings.projection !== 'mercator'; pb.innerHTML = globe ? ICON.map : ICON.globe; pb.title = pb.ariaLabel = globe ? 'Switch to flat map' : 'Switch to globe'; }
   }
 
-  toast(html, ms = 2600) {
+  toast(html, ms = 2600, { batch } = {}) {
+    if (!batch) this._batch = null;                    // any other message ends a run of landmark taps
     const t = $('#toast'); t.innerHTML = html; t.classList.add('show');
-    clearTimeout(this._tt); this._tt = setTimeout(() => t.classList.remove('show'), ms);
+    clearTimeout(this._tt);
+    const hide = () => {
+      if (batch && this._tickPending) return (this._tt = setTimeout(hide, 400));   // taps still landing: keep the run going
+      t.classList.remove('show'); if (batch) this._batch = null;
+    };
+    this._tt = setTimeout(hide, ms);
   }
 
   // ───────────────────────── wiring ─────────────────────────
@@ -218,8 +224,9 @@ export class UI {
 
   // ───────────────────────── store events ─────────────────────────
   onStoreChange(keys) {
-    this.map.refreshVisited();
-    this.renderRibbon();
+    // the map and ribbon redraw once for a run of quick taps (a map repaint is the slow part on a phone)
+    clearTimeout(this._mapT);
+    this._mapT = setTimeout(() => { this.map.refreshVisited(); this.renderRibbon(); }, this._suppressPanel ? 250 : 0);
     if (this._suppressPanel) { this._suppressPanel = false; this.updateExploreCounts(); if (this.sel && this.map.popup?.isOpen()) this.refreshPopup(); return; }
     this.renderPanel();
     if (this.sel && this.map.popup?.isOpen()) this.refreshPopup();
@@ -351,6 +358,96 @@ export class UI {
     if (keptCity) msg += `. ${esc(this.keyName(keptCity))} stays in your logbook`;
     this.toast(msg, removed.length || keptCity ? 4200 : 2600);
   }
+  // ───────────────────────── quick ticking: every list of landmarks ─────────────────────────
+  // One tap on a landmark (Wonders grid, city sights, the city and country checklists, the cities & sights dialog)
+  // ticks it right there, lit up like the map does, and logs its city and country as before. A second tap un-ticks
+  // it. Nothing navigates: the pin button on each one is the only way to the map. Taps run in order, one after the
+  // other, and a run of taps shares one toast with an undo.
+  wireLmToggles(root, after, opts) {
+    for (const el of $$('[data-lmt]', root)) {
+      el.onclick = ev => { if (!ev.target.closest('[data-loc]')) this.tapLm(el.dataset.key, after, opts); };
+      if (el.tagName !== 'BUTTON') el.onkeydown = ev => { if ((ev.key === ' ' || ev.key === 'Enter') && ev.target === el) { ev.preventDefault(); this.tapLm(el.dataset.key, after, opts); } };
+    }
+    for (const b of $$('[data-loc]', root)) b.onclick = ev => { ev.stopPropagation(); this.select('landmark', b.dataset.loc, { fly: true }); };
+  }
+  tapLm(key, after, opts) {
+    const el = $(`[data-lmt][data-key="${key}"]`);
+    this.markLm(key, !(el ? el.classList.contains('on') : store.has(key)), true);   // light up straight away
+    this._tickPending = (this._tickPending || 0) + 1;
+    (this._touched ||= new Set()).add(key);
+    this.quickTick(key, opts).then(on => {
+      if (--this._tickPending === 0) { for (const k of this._touched) this.markLm(k, store.has(k)); this._touched.clear(); }
+      after?.(key, on);
+    });
+  }
+  /** Show a landmark as ticked or not wherever it is listed on screen. */
+  markLm(key, on, animate) {
+    for (const el of $$(`[data-lmt][data-key="${key}"]`)) {
+      el.classList.toggle('on', on);
+      el.setAttribute(el.getAttribute('role') === 'checkbox' ? 'aria-checked' : 'aria-pressed', on);
+      if (animate) { el.classList.remove('just', 'unjust'); void el.offsetWidth; el.classList.add(on ? 'just' : 'unjust'); }
+    }
+  }
+  /** Tick or un-tick one landmark (un-ticking follows removeLandmark's rules). Resolves to whether it is ticked. */
+  quickTick(key, { quiet } = {}) {
+    const run = async () => {
+      const info = await this.describe('landmark', key.slice(2)).catch(() => null);
+      if (!info) return store.has(key);
+      if (!quiet) this.batchNote(info.key, [...info.parents.map(p => p[0]), ...placeKeys(store.landmarkPlace(info.key.slice(2)))]);
+      this._suppressPanel = true;                     // the list updates itself; no full redraw per tap
+      if (store.has(info.key)) store.removeLandmark(info.key);
+      else store.toggle(info.key, info.data, info.parents, { auto: true });
+      this._suppressPanel = false;
+      if (!quiet) this.showBatch();
+      return store.has(info.key);
+    };
+    return (this._tickQ = (this._tickQ || Promise.resolve()).then(run, run));
+  }
+  /** Remember how a landmark and its places were before the first tap of this run, for the toast and the undo. */
+  batchNote(key, others) {
+    const b = this._batch || (this._batch = { prev: new Map(), lms: [] });
+    for (const k of [key, ...others]) if (!b.prev.has(k)) b.prev.set(k, store.has(k) ? { ...store.get(k) } : null);
+    if (!b.lms.includes(key)) b.lms.push(key);
+  }
+  /** One toast for a run of taps: "★ 3 sights logged · also Paris and France  [Undo]". */
+  showBatch() {
+    const b = this._batch; if (!b) return;
+    const was = k => !!b.prev.get(k), now = k => store.has(k);
+    const added = b.lms.filter(k => !was(k) && now(k)), gone = b.lms.filter(k => was(k) && !now(k));
+    const others = [...b.prev.keys()].filter(k => !k.startsWith('l:'));
+    const alsoAdded = others.filter(k => !was(k) && now(k)), alsoGone = others.filter(k => was(k) && !now(k));
+    if (!added.length && !gone.length) { this._batch = null; $('#toast').classList.remove('show'); return; }
+    const nm = k => `<b>${esc(this.keyName(k))}</b>`;
+    const noun = ks => ks.every(k => isWonder(k.slice(2))) ? 'wonders' : ks.every(k => !isWonder(k.slice(2))) ? 'sights' : 'landmarks';
+    const parts = [];
+    if (added.length) parts.push(added.length === 1 ? `${isWonder(added[0].slice(2)) ? '★ Collected' : '✓ Logged'} ${nm(added[0])}` : `<b>★ ${added.length} ${noun(added)} logged</b>`);
+    if (gone.length) parts.push(gone.length === 1 ? `Un-ticked ${nm(gone[0])}` : `${gone.length} ${noun(gone)} un-ticked`);
+    let msg = parts.join(' · ');
+    if (added.some(k => store.isWished(k))) { msg = '⭐ Wishlist ✓ ' + msg; if (!b.party) { b.party = true; this.celebrate(); } }
+    if (alsoAdded.length) {
+      // cities and countries first; a long run names three and counts the rest
+      const ord = k => k.startsWith('ci:') ? 0 : k.startsWith('c:') ? 1 : 2;
+      const names = [...new Set([...alsoAdded].sort((a, b) => ord(a) - ord(b)).map(k => this.keyName(k)))];
+      msg += ` · also ${names.length > 4 ? names.slice(0, 3).map(n => `<b>${esc(n)}</b>`).join(', ') + ` +${names.length - 3} more` : listNames(names)}`;
+    }
+    if (alsoGone.length) msg += ` · removed ${listNames(alsoGone.map(k => this.keyName(k)))} (logged only because of ${gone.length === 1 ? 'it' : 'them'})`;
+    if (gone.length === 1 && !added.length) {
+      const ci = placeKeys(store.landmarkPlace(gone[0].slice(2))).find(k => k.startsWith('ci:'));
+      if (ci && now(ci)) msg += `. ${esc(this.keyName(ci))} stays in your logbook`;
+    }
+    this.toast(msg + ' <button class="t-undo" data-undo>Undo</button>', alsoAdded.length || alsoGone.length ? 4800 : 3800, { batch: true });
+    $('#toast [data-undo]').onclick = () => this.undoBatch();
+  }
+  /** Put back every landmark and place the last run of taps changed. */
+  undoBatch() {
+    const b = this._batch; if (!b) return;
+    this._batch = null;
+    this._tickQ = (this._tickQ || Promise.resolve()).then(() => {
+      store.restore(b.prev);                           // a normal change: the open panel redraws itself
+      for (const k of b.lms) this.markLm(k, store.has(k));
+      this.toast('↩ Undone');
+    });
+  }
   /** Display name of any logbook key. */
   keyName(k) {
     const i = k.indexOf(':'), t = k.slice(0, i), id = k.slice(i + 1), v = store.get(k) || {};
@@ -477,7 +574,7 @@ export class UI {
       <div class="p-sec"><h3>REGIONS <span>${info.meta.nstates}</span></h3><input class="filter-input" id="st-filter" placeholder="Filter regions…"><div class="ck-list" id="st-list" style="margin-top:8px"></div></div>
       <div class="p-sec"><h3>CITIES & TOWNS <span>${info.meta.ncities.toLocaleString()}</span></h3><input class="filter-input" id="ci-filter" placeholder="Find a city or town…"><div class="ck-list" id="ci-list" style="margin-top:8px"><div class="muted">Loading cities…</div></div></div>`;
     paintSprites(el);
-    this.wireLmChips(el);
+    this.wireLmToggles(el, () => { this.updateExploreCounts(); this._sbcCounts?.(); });
     $('#trip-open').onclick = () => this.openTrip(cid);
     const states = Object.entries(DATA.meta.states).filter(([, s]) => s.cid === cid).sort((a, b) => a[1].name.localeCompare(b[1].name));
     const C = store.settings.colors;
@@ -518,7 +615,7 @@ export class UI {
     const lms = LANDMARKS.filter(l => l.cc === cid && this.lmState(l) === sid);
     el.innerHTML = `${lms.length ? `<div class="p-sec"><h3>WONDERS HERE</h3><div class="lm-chips">${lms.map(l => lmChip(l)).join('')}</div></div>` : ''}
       <div class="p-sec"><h3>CITIES & TOWNS <span id="st-count"></span></h3><input class="filter-input" id="ci-filter" placeholder="Find a city or town…"><div class="ck-list" id="ci-list" style="margin-top:8px"><div class="muted">Loading…</div></div></div>`;
-    paintSprites(el); this.wireLmChips(el);
+    paintSprites(el); this.wireLmToggles(el);
     const map = await this.countryCityMap(cid).catch(() => new Map());
     if (this.sel?.id !== sid) return;
     const all = [...map.values()].filter(c => c.sid === sid);
@@ -555,9 +652,9 @@ export class UI {
       const list = $('#city-lm-list', el);
       const wasOn = () => store.isVisited(info.key);
       let before = wasOn();
-      if (list) this.wireCk(list, key => this.describe('landmark', key.slice(2)), () => {
+      if (list) this.wireLmToggles(list, key => {
         // ticking a sight can log the city itself: then redraw so the button, date and notes show it
-        if (wasOn() !== before) { before = wasOn(); return this.renderPanel(); }
+        if (wasOn() !== before) { before = wasOn(); this.renderPanel(); return this.markLm(key, store.has(key), true); }
         const c = $('#city-lm-count'); if (c) c.textContent = `${got()}/${lms.length}`; this.updateExploreCounts();
       });
       this.renderNearby($('#city-near', el), info.lngLat, 80, null, new Set(lms.map(l => l.id)));
@@ -584,11 +681,12 @@ export class UI {
           <div class="ck-list lm-list">${ls.map(l => lmRow(l)).join('')}</div></div>`;
       }).join('')}${order.length > limit ? `<button class="pix-btn small ghost more-btn" id="sbc-more">Show all ${order.length} groups</button>` : ''}</div>`;
       paintSprites(el);
-      $$('.ck-list', el).forEach(list => this.wireCk(list, key => this.describe('landmark', key.slice(2)), () => { this.updateExploreCounts(); redrawCounts(); }));
+      this.wireLmToggles(el, () => { this.updateExploreCounts(); redrawCounts(); });
       $$('[data-city]', el).forEach(a => a.onclick = () => this.select('city', a.dataset.city, { fly: true, props: { cid } }));
       const more = $('#sbc-more', el); if (more) more.onclick = () => { this._sbcAll = cid; draw(); };
     };
-    const redrawCounts = () => {
+    const redrawCounts = this._sbcCounts = () => {
+      if (!el.isConnected) return;
       $$('.lm-group', el).forEach(g => { const rows = $$('.ck', g); $('.lm-group-h span:last-child', g).textContent = `${rows.filter(r => r.classList.contains('on')).length}/${rows.length}`; });
       const all = countryLandmarks(cid); const h = $('h3 span', el); if (h) h.textContent = `${all.filter(l => store.has('l:' + l.id)).length}/${all.length}`;
     };
@@ -599,9 +697,9 @@ export class UI {
     if (!el) return;
     const near = LANDMARKS.filter(l => l.id !== skip && !skipSet?.has(l.id)).map(l => [l, haversine(lat, lon, l.lat, l.lon)]).filter(([, d]) => d < km).sort((a, b) => a[1] - b[1]).slice(0, 8);
     el.innerHTML = near.length ? `<div class="p-sec"><h3>WONDERS NEARBY</h3><div class="lm-chips">${near.map(([l, d]) => lmChip(l, `${Math.round(d)} km`)).join('')}</div></div>` : '';
-    paintSprites(el); this.wireLmChips(el);
+    paintSprites(el); this.wireLmToggles(el);
   }
-  wireLmChips(el) { $$('.lm-chip', el).forEach(b => b.onclick = () => this.select('landmark', b.dataset.id, { fly: true })); }
+  wireLmChips(el) { $$('.lm-chip[data-id]', el).forEach(b => b.onclick = () => this.select('landmark', b.dataset.id, { fly: true })); }
   wireCk(list, describeFn, after) {
     $$('.ck', list).forEach(row => {
       row.onclick = async ev => {
@@ -752,27 +850,60 @@ export class UI {
     const cats = ['all', 'got', ...Object.keys(CATEGORIES)];
     const label = c => c === 'all' ? 'All' : c === 'got' ? `Collected (${got.size})` : CATEGORIES[c];
     const list = LANDMARKS.filter(l => this.lmFilter === 'all' || (this.lmFilter === 'got' ? got.has(l.id) : l.cat === this.lmFilter));
-    body.innerHTML = `${sw}<div class="kv" style="margin-top:12px"><span><b>${got.size}</b> / ${LANDMARKS.length} wonders collected</span></div>
-      <div class="bar" style="--fill:var(--c-landmark);margin:-6px 0 14px"><i style="width:calc(${(got.size / LANDMARKS.length) * 100}% - 4px)"></i></div>
+    body.innerHTML = `${sw}<div class="kv" style="margin-top:12px"><span><b id="lm-got">${got.size}</b> / ${LANDMARKS.length} wonders collected</span></div>
+      <div class="bar" style="--fill:var(--c-landmark);margin:-6px 0 14px"><i id="lm-bar" style="width:calc(${(got.size / LANDMARKS.length) * 100}% - 4px)"></i></div>
       <div class="filters">${cats.map(c => `<button class="chip ${this.lmFilter === c ? 'active' : ''}" data-f="${c}">${esc(label(c))}</button>`).join('')}</div>
-      <div class="dex">${list.map(l => `<button class="dex-card ${got.has(l.id) ? 'on' : 'off'}" data-id="${l.id}" title="${esc(l.name)} — ${esc(country(l.cc)?.name || '')}"><span class="dex-no">${String(LANDMARKS.indexOf(l) + 1).padStart(3, '0')}</span><canvas data-sprite="${l.sprite}"></canvas>${esc(l.name)}</button>`).join('')}</div>`;
+      <p class="muted small-note tap-hint">Tap a wonder to tick it. ${ICON.pin} shows it on the map.</p>
+      <div class="dex">${list.map(l => dexCard(l, LANDMARKS.indexOf(l) + 1)).join('')}</div>`;
     $$('.chip', body).forEach(b => b.onclick = () => { this.lmFilter = b.dataset.f; this.renderPanel(true); });
-    $$('.dex-card', body).forEach(b => b.onclick = () => this.select('landmark', b.dataset.id, { fly: true }));
+    this.wireLmToggles(body, () => {
+      const n = store.landmarks().filter(isWonder).length;
+      const g = $('#lm-got', body); if (g) g.textContent = n;
+      const bar = $('#lm-bar', body); if (bar) bar.style.width = `calc(${(n / LANDMARKS.length) * 100}% - 4px)`;
+      const c = $('.chip[data-f=got]', body); if (c) c.textContent = `Collected (${n})`;
+    });
     wireSw();
   }
-  /** City sights: not part of the Wonders collection; listed per country, ticked off in each country's checklist. */
+  /** City sights: not part of the Wonders collection. Listed per country; open one to tick its sights right here. */
   renderSightsTab(body, sw) {
     if (!sightsLoaded()) { body.innerHTML = sw + '<div class="muted" style="margin-top:14px">Loading city sights…</div>'; loadSights().then(() => { if (this.tab === 'landmarks') this.renderPanel(); }).catch(() => {}); return; }
     const got = SIGHTS.filter(l => store.has('l:' + l.id)).length;
     const byC = new Map();
     for (const l of SIGHTS) { if (!byC.has(l.cc)) byC.set(l.cc, [0, 0]); const r = byC.get(l.cc); r[1]++; if (store.has('l:' + l.id)) r[0]++; }
     const rows = [...byC.entries()].sort((a, b) => (b[1][0] > 0) - (a[1][0] > 0) || (country(a[0])?.name || '').localeCompare(country(b[0])?.name || ''));
-    body.innerHTML = `${sw}<div class="kv" style="margin-top:12px"><span><b>${got}</b> / ${SIGHTS.length} city sights ticked</span></div>
-      <p class="muted">Famous sights in ${new Set(SIGHTS.map(l => l.gid)).size} of the most-visited cities. They don't count toward the Wonders collection. Open a country to tick them off city by city.</p>
+    const open = this._sgOpen ||= new Set();
+    body.innerHTML = `${sw}<div class="kv" style="margin-top:12px"><span><b id="sg-got">${got}</b> / ${SIGHTS.length} city sights ticked</span></div>
+      <p class="muted">Famous sights in ${new Set(SIGHTS.map(l => l.gid)).size} of the most-visited cities. They don't count toward the Wonders collection. Open a country and tap the sights you've been to.</p>
       <input class="filter-input" id="sg-filter" placeholder="Filter countries…" style="margin:6px 0 8px">
-      <div class="sg-list">${rows.map(([cc, [g, n]]) => `<button class="lb-row sg-row" data-cc="${cc}" data-name="${esc(fold(country(cc)?.name || cc))}">${flagHTML(cc)}<span class="nm">${esc(country(cc)?.name || cc)}</span><span class="cnt">${g}/${n}</span><span class="chev">›</span></button>`).join('')}</div>`;
-    $$('.sg-row', body).forEach(b => b.onclick = () => this.select('country', b.dataset.cc, { fly: true }));
-    $('#sg-filter').oninput = e => { const q = fold(e.target.value).trim(); $$('.sg-row', body).forEach(r => r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none'); };
+      <div class="sg-list">${rows.map(([cc, [g, n]]) => `<div class="sg-c" data-cc="${cc}" data-name="${esc(fold(country(cc)?.name || cc))}"><button class="lb-row sg-row" aria-expanded="${open.has(cc)}">${flagHTML(cc)}<span class="nm">${esc(country(cc)?.name || cc)}</span><span class="cnt">${g}/${n}</span><span class="chev">›</span></button><div class="sg-body"></div></div>`).join('')}</div>`;
+    const counts = () => {
+      const g = $('#sg-got', body); if (g) g.textContent = SIGHTS.filter(l => store.has('l:' + l.id)).length;
+      for (const c of $$('.sg-c', body)) { const ls = SIGHTS.filter(l => l.cc === c.dataset.cc); $('.cnt', c).textContent = `${ls.filter(l => store.has('l:' + l.id)).length}/${ls.length}`; }
+      for (const g of $$('.lm-group', body)) { const r = $$('.ck', g); $('.lm-group-h span:last-child', g).textContent = `${r.filter(x => x.classList.contains('on')).length}/${r.length}`; }
+    };
+    const fill = async c => {
+      const cc = c.dataset.cc, el = $('.sg-body', c);
+      const map = await this.countryCityMap(cc).catch(() => new Map());
+      if (!open.has(cc) || !el.isConnected) return;
+      const groups = new Map();
+      for (const l of SIGHTS.filter(x => x.cc === cc)) { if (!groups.has(l.gid)) groups.set(l.gid, []); groups.get(l.gid).push(l); }
+      el.innerHTML = [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([gid, ls]) =>
+        `<div class="lm-group"><div class="lm-group-h"><span>${esc(map.get(gid)?.n || 'Other')}</span><span>${ls.filter(l => store.has('l:' + l.id)).length}/${ls.length}</span></div><div class="ck-list lm-list">${ls.map(l => lmRow(l)).join('')}</div></div>`).join('')
+        + `<button class="pix-btn small ghost sg-go" data-go-c="${cc}">Open ${esc(country(cc)?.name || cc)} ›</button>`;
+      paintSprites(el);
+      this.wireLmToggles(el, counts);
+      $('[data-go-c]', el).onclick = () => this.select('country', cc, { fly: true });
+    };
+    for (const c of $$('.sg-c', body)) {
+      if (open.has(c.dataset.cc)) { c.classList.add('open'); fill(c); }
+      $('.sg-row', c).onclick = () => {
+        const cc = c.dataset.cc, on = !open.has(cc);
+        if (on) open.add(cc); else open.delete(cc);
+        c.classList.toggle('open', on); $('.sg-row', c).setAttribute('aria-expanded', on);
+        if (on) fill(c); else $('.sg-body', c).innerHTML = '';
+      };
+    }
+    $('#sg-filter').oninput = e => { const q = fold(e.target.value).trim(); $$('.sg-c', body).forEach(r => r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none'); };
   }
   onSightsLoaded() {
     if (this.tab === 'landmarks' && this.lmMode === 'sights') this.renderPanel();
@@ -1085,7 +1216,7 @@ export class UI {
     // biggest and most-visited first: population, boosted by how many sights the city has
     const score = x => (x.p || 0) * (1 + 2 * cityLandmarks(x.id).length) + (x.cap ? x.p || 0 : 0);
     all.sort((a, b) => score(b) - score(a));
-    this.trip = { cid, step: 'cities', picks: [], queue: [], i: 0, q: '', all, cities: 0, sights: 0 };
+    this.trip = { cid, step: 'cities', picks: [], queue: [], i: 0, q: '', all, cities: 0, seen: new Set(), before: new Set(store.landmarks()) };
     this.renderTrip();
     $('#toast').classList.remove('show');                              // the "Stamped" note would sit on top of the list
     this.openSheet('trip-sheet', this.isPhone() ? '#trip-skip' : '#trip-q');
@@ -1153,17 +1284,8 @@ export class UI {
       <div class="ck-list lm-list trip-list" id="trip-list">${lms.map(l => lmRow(l, { noGo: true })).join('')}</div>
       <div class="trip-foot"><button class="pix-btn ghost" id="trip-back">‹ Back</button><span class="trip-gap"></span><button class="pix-btn ghost" id="trip-skip">${last ? 'Skip' : 'Skip city'}</button><button class="pix-btn primary" id="trip-next">${last ? 'Done ✓' : 'Next city ›'}</button></div>`;
     paintSprites(card);
-    $$('#trip-list .ck').forEach(row => {
-      row.setAttribute('role', 'checkbox'); row.tabIndex = 0; row.setAttribute('aria-checked', row.classList.contains('on'));
-      const flip = async () => {
-        const info = await this.describe('landmark', row.dataset.key.slice(2)); if (!info) return;
-        if (store.has(info.key)) { store.removeLandmark(info.key); t.sights--; }
-        else { store.toggle(info.key, info.data, info.parents, { auto: true }); t.sights++; }
-        row.classList.toggle('on', store.has(info.key)); row.setAttribute('aria-checked', store.has(info.key));
-      };
-      row.onclick = flip;
-      row.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } };
-    });
+    lms.forEach(l => t.seen.add('l:' + l.id));
+    this.wireLmToggles($('#trip-list'), null, { quiet: true });   // the dialog sums up when it closes
     $('#trip-back').onclick = () => { if (t.i > 0) t.i--; else t.step = 'cities'; this.renderTrip(); };
     const go = () => { if (last) this.closeTrip(true); else { t.i++; this.renderTrip(); $('#trip-next')?.focus(); } };
     $('#trip-skip').onclick = go;
@@ -1187,6 +1309,7 @@ export class UI {
     const t = this.trip;
     this.closeSheet($('#trip-sheet'));
     if (!done || !t) return;
+    t.sights = [...t.seen].filter(k => store.has(k) && !t.before.has(k.slice(2))).length;
     const parts = [t.cities && `${t.cities} cit${t.cities === 1 ? 'y' : 'ies'}`, t.sights > 0 && `${t.sights} sight${t.sights === 1 ? '' : 's'}`].filter(Boolean);
     if (parts.length) { this.toast(`<b>＋ Logged ${parts.join(' and ')}</b> in ${esc(country(t.cid)?.name)}`, 3200); this.celebrate(); }
   }
@@ -1287,13 +1410,25 @@ function ckRow(key, name, sub, style, go, cap) {
 function cityData(c) { return { n: c.n, c: c.cid, s: c.sid, lat: c.lat, lon: c.lon, p: c.p }; }
 /** "Paris, Île-de-France and France" */
 function listNames(names) { const n = [...new Set(names)].map(x => `<b>${esc(x)}</b>`); return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]; }
-/** One landmark as a checklist row. */
+/** The "show it on the map" button every landmark carries: the only way a landmark list navigates. */
+function locBtn(l, cls = 'loc') { return `<button class="${cls}" data-loc="${l.id}" title="Show on map" aria-label="Show ${esc(l.name)} on the map">${ICON.pin}</button>`; }
+/** One landmark as a checklist row: tapping it ticks it (data-lmt), the pin shows it on the map. */
 function lmRow(l, { noGo } = {}) {
-  return `<div class="ck lm-ck ${store.has('l:' + l.id) ? 'on' : ''}" data-key="l:${l.id}" data-go="landmark:${l.id}" style="--ck:var(--c-landmark)"><span class="bx"></span><canvas data-sprite="${l.sprite}"></canvas><span class="nm">${esc(l.name)}</span>${l.sight ? '' : '<span class="sub">★ wonder</span>'}${noGo ? '' : `<button class="go" title="Show on map" aria-label="Show ${esc(l.name)} on the map">›</button>`}</div>`;
+  const on = store.has('l:' + l.id);
+  return `<div class="ck lm-ck ${on ? 'on' : ''}" data-lmt data-key="l:${l.id}" role="checkbox" aria-checked="${on}" tabindex="0" style="--ck:var(--c-landmark)"><span class="bx"></span><canvas data-sprite="${l.sprite}"></canvas><span class="nm">${esc(l.name)}</span>${l.sight ? '' : '<span class="sub">★ wonder</span>'}${noGo ? '' : locBtn(l, 'go loc')}</div>`;
 }
+/** A landmark chip (country, region and nearby lists): tap ticks it, the pin shows it on the map. */
 function lmChip(l, extra) {
-  return `<button class="lm-chip ${store.has('l:' + l.id) ? 'on' : ''}" data-id="${l.id}"><canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}${extra ? `<br><small class="muted">${extra}</small>` : ''}</span></button>`;
+  const on = store.has('l:' + l.id);
+  return `<span class="lm-chip-w"><button class="lm-chip ${on ? 'on' : ''}" data-lmt data-key="l:${l.id}" aria-pressed="${on}"><canvas data-sprite="${l.sprite}"></canvas><span>${esc(l.name)}${extra ? `<br><small class="muted">${extra}</small>` : ''}</span></button>${locBtn(l, 'chip-loc')}</span>`;
 }
+/** A card in the Wonders grid: the real sprite, dimmed until ticked. */
+function dexCard(l, no) {
+  const on = store.has('l:' + l.id);
+  return `<div class="dex-item"><button class="dex-card ${on ? 'on' : ''}" data-lmt data-key="l:${l.id}" aria-pressed="${on}" title="${esc(l.name)} — ${esc(country(l.cc)?.name || '')}"><span class="dex-no">${String(no).padStart(3, '0')}</span><canvas data-sprite="${l.sprite}"></canvas><span class="dex-nm">${esc(l.name)}</span></button>${locBtn(l, 'dex-loc')}</div>`;
+}
+/** The city, state and country keys of a landmark's place. */
+function placeKeys(p) { return [p.ci ? 'ci:' + p.ci : '', p.s ? 's:' + p.s : '', p.c ? 'c:' + p.c : ''].filter(Boolean); }
 export function paintSprites(root) {
   for (const c of root.querySelectorAll('canvas[data-sprite]')) {
     const src = renderSprite(c.dataset.sprite, +(c.dataset.scale || 4));

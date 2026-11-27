@@ -164,6 +164,17 @@ class Store extends EventTarget {
     if (changed.length) this._changed(changed);
     return changed.length;
   }
+  /** Put items back as they were (prev: Map key → item, or null for "was not logged"). Used by undo. */
+  restore(prev) {
+    const now = Date.now(), keys = [];
+    for (const [k, v] of prev) {
+      if (v) { this.book.items[k] = { ...v, m: now }; delete this.book.removed[k]; }
+      else if (this.book.items[k]) { delete this.book.items[k]; this.book.removed[k] = now; }
+      else continue;
+      keys.push(k);
+    }
+    if (keys.length) this._changed(keys);
+  }
   setHome(home) { this.book.home = home ? { ...home, m: Date.now() } : { cleared: true, m: Date.now() }; this._changed(['home']); }
   get home() { return this.book.home && !this.book.home.cleared ? this.book.home : null; }
 

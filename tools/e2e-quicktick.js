@@ -36,6 +36,8 @@ const idle = page => until(() => page.evaluate(() => !window.__app.ui._tickPendi
   try {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
     await context.route('**/js/firebase-config.js', r => r.fulfill({ contentType: 'application/javascript', body: 'export const firebaseConfig = null;\nexport const appCheckSiteKey = null;\n' }));
+    // each country's city list arrives after 600 ms, like on a phone network: the 20 taps below span 15 countries
+    if (!process.env.WHYB_URL) await context.route('**/data/cities/*.json', async r => { await sleep(600); r.continue(); });
     const page = await context.newPage();
     const errors = [];
     page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::|WebGL|tile|glyph/i.test(m.text())) errors.push(m.text()); });

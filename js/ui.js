@@ -226,7 +226,11 @@ export class UI {
   onStoreChange(keys) {
     // the map and ribbon redraw once for a run of quick taps (a map repaint is the slow part on a phone)
     clearTimeout(this._mapT);
-    this._mapT = setTimeout(() => { this.map.refreshVisited(); this.renderRibbon(); }, this._suppressPanel ? 250 : 0);
+    const redraw = () => {
+      if (this._tickPending) return (this._mapT = setTimeout(redraw, 250));   // more taps on the way: wait for the run
+      this.map.refreshVisited(); this.renderRibbon();
+    };
+    this._mapT = setTimeout(redraw, this._suppressPanel ? 250 : 0);
     if (this._suppressPanel) { this._suppressPanel = false; this.updateExploreCounts(); if (this.sel && this.map.popup?.isOpen()) this.refreshPopup(); return; }
     this.renderPanel();
     if (this.sel && this.map.popup?.isOpen()) this.refreshPopup();
@@ -375,7 +379,7 @@ export class UI {
     this.markLm(key, !(el ? el.classList.contains('on') : store.has(key)), true);   // light up straight away
     this._tickPending = (this._tickPending || 0) + 1;
     (this._touched ||= new Set()).add(key);
-    this.quickTick(key, opts).then(on => {
+    this.quickTick(key, opts).catch(e => { console.warn(e); return store.has(key); }).then(on => {
       if (--this._tickPending === 0) { for (const k of this._touched) this.markLm(k, store.has(k)); this._touched.clear(); }
       after?.(key, on);
     });
@@ -390,8 +394,11 @@ export class UI {
   }
   /** Tick or un-tick one landmark (un-ticking follows removeLandmark's rules). Resolves to whether it is ticked. */
   quickTick(key, { quiet } = {}) {
+    // look up its city now, in parallel with the taps before it (a country's city list may still be downloading);
+    // only the logging itself waits its turn
+    const looked = this.describe('landmark', key.slice(2)).catch(() => null);
     const run = async () => {
-      const info = await this.describe('landmark', key.slice(2)).catch(() => null);
+      const info = await looked;
       if (!info) return store.has(key);
       if (!quiet) this.batchNote(info.key, [...info.parents.map(p => p[0]), ...placeKeys(store.landmarkPlace(info.key.slice(2)))]);
       this._suppressPanel = true;                     // the list updates itself; no full redraw per tap
